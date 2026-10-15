@@ -244,7 +244,7 @@ func _refresh_weapon() -> void:
 		_ammo.text = ""
 		return
 	_weapon.text = G.weapon_name(w)
-	_weapon.label_settings.font_color = Color(0.95, 0.6, 1.0) if w.up else Color(0.9, 0.9, 0.88)
+	_weapon.label_settings.font_color = G.tier_color(int(w.up))
 	_ammo.text = "%d / %d" % [w.mag, w.reserve]
 	var low: bool = w.mag <= int(G.stat(w, "mag")) / 4
 	_ammo.label_settings.font_color = Color(1, 0.35, 0.3) if low else Color.WHITE

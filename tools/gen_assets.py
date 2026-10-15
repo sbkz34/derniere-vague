@@ -422,3 +422,38 @@ with wave.open(os.path.join(SFX, "ambient.wav"), "wb") as w:
 
 print("textures:", sorted(os.listdir(TEX)))
 print("sounds:", sorted(os.listdir(SFX)))
+
+
+# ----------------------------------------------------------------------------------------------
+# Special round: zombie dogs
+# ----------------------------------------------------------------------------------------------
+def write_sfx(name, x):
+    write(name, x)
+
+
+# Howl: a long wavering cry that rises then falls, two voices slightly apart.
+d = 2.6
+tt = t(d)
+contour = 380 + 260 * np.sin(np.pi * np.clip(tt / d * 1.15, 0, 1)) ** 1.5
+howl = np.zeros_like(tt)
+for detune, gain in ((1.0, 1.0), (1.012, 0.6), (2.0, 0.25)):
+    f = contour * detune * (1 + 0.012 * np.sin(2 * np.pi * 5.5 * tt))
+    howl += np.sin(2 * np.pi * np.cumsum(f) / SR) * gain
+howl *= np.clip(tt / 0.25, 0, 1) * np.clip((d - tt) / 0.6, 0, 1)
+howl += lowpass(white(d), 1200) * 0.08 * np.clip(tt / 0.25, 0, 1)
+write_sfx("howl.wav", howl)
+# Bark / bite: a short rough snarl and a snap of the jaws.
+bark = groan(0.28, 260, 18.0, 1800, 9) * np.exp(-t(0.28) * 6)
+write_sfx("bark.wav", place(0.4, [(0.0, bark, 1.0), (0.22, metal_tick(900, 0.01, 0.08), 0.8)]))
+# Dog death: whimper turning into a crackling burst of embers.
+whimper_f = 700 * np.exp(-t(0.4) * 3)
+whimper = np.sin(2 * np.pi * np.cumsum(whimper_f) / SR) * np.exp(-t(0.4) * 5)
+crackle = np.zeros(int(SR * 0.9))
+for i in range(40):
+    s0 = rng.integers(0, len(crackle) - 400)
+    crackle[s0:s0 + 300] += highpass(white(300 / SR), 2000) * rng.uniform(0.2, 1.0) * np.exp(-np.arange(300) / 60)
+write_sfx("dog_death.wav", place(1.0, [(0.0, whimper, 0.8), (0.1, crackle, 0.9), (0.1, lowpass(white(0.5), 300) * env(0.5, 0.002, 0.12), 1.2)]))
+# Thunder crack (dog appearing): sharp crack, then a long low rumble.
+d = 2.2
+rumble = lowpass(white(d), 140 + 300 * np.exp(-t(d) * 3)) * env(d, 0.01, 0.7) * 3
+write_sfx("thunder.wav", place(d, [(0.0, highpass(white(0.12), 1500) * env(0.12, 0.0005, 0.03), 1.0), (0.02, rumble, 1.0)]))

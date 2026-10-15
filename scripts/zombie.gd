@@ -6,9 +6,11 @@ extends CharacterBody3D
 enum State { APPROACH, TEAR, VAULT, CHASE, ATTACK, DEAD }
 
 const HEAD_Y := 1.56
-const ATTACK_RANGE := 1.35
-const HIT_RANGE := 1.85
-const DAMAGE := 50.0
+var attack_range := 1.35
+var hit_range := 1.85
+var damage := 50.0
+var attack_windup := 0.45
+var attack_length := 1.1
 
 var state := State.APPROACH
 var alive := true
@@ -112,19 +114,13 @@ func _ready() -> void:
 	add_to_group("zombies")
 	collision_layer = G.L_ZOMBIE
 	collision_mask = G.L_WORLD
-	var cs := CollisionShape3D.new()
-	var cap := CapsuleShape3D.new()
-	cap.radius = 0.33
-	cap.height = 1.9
-	cs.shape = cap
-	cs.position.y = 0.95
-	add_child(cs)
+	_make_body()
 	agent = NavigationAgent3D.new()
 	agent.path_desired_distance = 0.6
 	agent.target_desired_distance = 0.9
 	agent.radius = 0.45
 	agent.height = 1.8
-	agent.max_speed = 6.0
+	agent.max_speed = 7.0
 	agent.neighbor_distance = 3.0
 	agent.max_neighbors = 6
 	agent.time_horizon_agents = 0.8
@@ -132,7 +128,23 @@ func _ready() -> void:
 	add_child(agent)
 	agent.velocity_computed.connect(_on_velocity_computed)
 	_build_model()
-	# Start further out in the fog and walk up to the window.
+	_place()
+	reset_physics_interpolation()
+	_groan_t = randf_range(1.0, 5.0)
+
+
+func _make_body() -> void:
+	var cs := CollisionShape3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.33
+	cap.height = 1.9
+	cs.shape = cap
+	cs.position.y = 0.95
+	add_child(cs)
+
+
+## Start further out in the fog and walk up to the window.
+func _place() -> void:
 	var lateral := window.along * randf_range(-3.0, 3.0)
 	_approach_from = window.outside_point(slot) - window.inward * randf_range(7.0, 10.0) + lateral
 	_approach_from.y = -0.02
@@ -140,8 +152,11 @@ func _ready() -> void:
 	var target := window.outside_point(slot)
 	_approach_len = max(0.5, _approach_from.distance_to(target) / max(speed, 1.2))
 	_face(target)
-	reset_physics_interpolation()
-	_groan_t = randf_range(1.0, 5.0)
+
+
+## Where the player's aim assist and the bot aim (chest height).
+func aim_point() -> Vector3:
+	return global_position + Vector3(0, 1.25, 0)
 
 
 func _build_model() -> void:
@@ -241,8 +256,7 @@ func _die(head: bool, dir: Vector3) -> void:
 	collision_layer = 0
 	collision_mask = 0
 	agent.avoidance_enabled = false
-	if window and window.busy and _vault_t > 0.0 and outside:
-		window.busy = false
+	_release_window()
 	G.play_at("zombie_death", global_position + Vector3(0, 1.2, 0), get_parent(), -4.0, randf_range(0.85, 1.15))
 	if head:
 		_head.visible = false
@@ -280,8 +294,8 @@ func _physics_process(delta: float) -> void:
 		State.TEAR:
 			_face(window.center)
 			if window.is_open():
-				if not window.busy and _front_of_queue():
-					window.busy = true
+				if not window.is_busy() and _front_of_queue():
+					window.claim(self)
 					state = State.VAULT
 					_vault_t = 0.0
 					_vault_from = global_position
@@ -302,7 +316,7 @@ func _physics_process(delta: float) -> void:
 			global_position = a.lerp(b, p)
 			_face(inside)
 			if p >= 1.0:
-				window.busy = false
+				_release_window()
 				outside = false
 				state = State.CHASE
 				agent.avoidance_enabled = true
@@ -312,6 +326,12 @@ func _physics_process(delta: float) -> void:
 			_chase(delta)
 		State.ATTACK:
 			_attack(delta)
+
+
+## Frees the window if this zombie was the one climbing through it.
+func _release_window() -> void:
+	if window and window.climber == self:
+		window.release()
 
 
 func _front_of_queue() -> bool:
@@ -332,11 +352,11 @@ func _chase(delta: float) -> void:
 		return
 	var to_player := player.global_position - global_position
 	var flat_d := Vector2(to_player.x, to_player.z).length()
-	if flat_d < ATTACK_RANGE and abs(to_player.y) < 1.5:
+	if flat_d < attack_range and abs(to_player.y) < 1.5:
 		state = State.ATTACK
 		_attack_t = 0.0
 		_attack_hit_done = false
-		G.play_at("growl", global_position + Vector3(0, 1.6, 0), get_parent(), -2.0, randf_range(0.85, 1.2))
+		_attack_sound()
 		return
 	_repath -= delta
 	if _repath <= 0.0:
@@ -384,19 +404,23 @@ func _on_velocity_computed(safe: Vector3) -> void:
 	move_and_slide()
 
 
+func _attack_sound() -> void:
+	G.play_at("growl", global_position + Vector3(0, 1.6, 0), get_parent(), -2.0, randf_range(0.85, 1.2))
+
+
 func _attack(delta: float) -> void:
 	_attack_t += delta
 	_desired = Vector3.ZERO
 	_move(delta)
 	if player:
 		_face(player.global_position)
-	if _attack_t > 0.45 and not _attack_hit_done:
+	if _attack_t > attack_windup and not _attack_hit_done:
 		_attack_hit_done = true
 		if player and player.targetable:
 			var d := player.global_position - global_position
-			if Vector2(d.x, d.z).length() < HIT_RANGE and abs(d.y) < 1.6:
-				player.take_hit(DAMAGE, global_position)
-	if _attack_t > 1.1:
+			if Vector2(d.x, d.z).length() < hit_range and abs(d.y) < 1.6:
+				player.take_hit(damage, global_position)
+	if _attack_t > attack_length:
 		state = State.CHASE
 
 

@@ -52,7 +52,7 @@ func ammo_price(player: Node) -> int:
 	var w: Dictionary = player.get_weapon(weapon_id)
 	if w.is_empty():
 		return price
-	return 2500 if w.up else max(250, price / 2)
+	return 1500 + 1000 * int(w.up) if int(w.up) > 0 else max(250, price / 2)
 
 
 func get_hint(player: Node) -> String:
@@ -71,4 +71,4 @@ func interact(player: Node) -> void:
 		if G.spend(ammo_price(player)):
 			player.refill_ammo(weapon_id)
 	elif G.spend(price):
-		player.give_weapon(weapon_id, false)
+		player.give_weapon(weapon_id, 0)

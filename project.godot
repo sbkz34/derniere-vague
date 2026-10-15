@@ -63,3 +63,4 @@ lights_and_shadows/directional_shadow/size=2048
 3d_physics/layer_3="zombies"
 3d_physics/layer_4="interact"
 3d_physics/layer_5="pickups"
+3d_physics/layer_6="player_block"

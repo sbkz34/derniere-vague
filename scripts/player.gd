@@ -71,7 +71,7 @@ var debug_ads := false   # tests: hold aim
 func _ready() -> void:
 	add_to_group("player")
 	collision_layer = G.L_PLAYER
-	collision_mask = G.L_WORLD | G.L_ZOMBIE
+	collision_mask = G.L_WORLD | G.L_ZOMBIE | G.L_PLAYER_BLOCK
 	floor_snap_length = 0.3
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -103,7 +103,7 @@ func _ready() -> void:
 	reach.add_child(rs)
 	reach.position.y = 1.0
 	add_child(reach)
-	give_weapon("p9", false, false)
+	give_weapon("p9", 0, false)
 
 
 func spawn_at(p: Vector3, yaw: float) -> void:
@@ -158,8 +158,8 @@ func refill_all() -> void:
 	weapons_changed.emit()
 
 
-func give_weapon(id: String, upgraded: bool, animate := true) -> void:
-	var w := G.new_weapon(id, upgraded)
+func give_weapon(id: String, tier: int, animate := true) -> void:
+	var w := G.new_weapon(id, tier)
 	for i in inv.size():
 		if inv[i].id == id:
 			inv[i] = w
@@ -553,7 +553,7 @@ func _shoot(w: Dictionary) -> void:
 	_pitch = clamp(_pitch + deg_to_rad(kick * 0.35), deg_to_rad(-85), deg_to_rad(85))
 	_yaw += deg_to_rad(randf_range(-0.15, 0.15) * kick)
 	view.shot(kick)
-	G.play(stats.sound, -3.0, randf_range(0.95, 1.05) * (0.85 if w.up else 1.0))
+	G.play(stats.sound, -3.0, randf_range(0.95, 1.05) * (1.0 - 0.07 * int(w.up)))
 	G.vibrate(0.25, 0.1 + 0.05 * kick, 0.08)
 	weapons_changed.emit()
 
@@ -594,14 +594,18 @@ func _fire_ray(origin: Vector3, dir: Vector3, w: Dictionary) -> Dictionary:
 			break
 	if is_wonder:
 		_wonder_blast(end_point, w)
-		Fx.beam(get_parent(), view.muzzle_global(), end_point, Color(1.0, 0.3, 0.9) if w.up else Color(0.3, 1.0, 0.5))
+		Fx.beam(get_parent(), view.muzzle_global(), end_point, _wonder_color(w))
 	return out
+
+
+func _wonder_color(w: Dictionary) -> Color:
+	return [Color(0.3, 1.0, 0.5), Color(1.0, 0.3, 0.9), Color(1.0, 0.8, 0.25), Color(1.0, 0.2, 0.1)][clampi(int(w.up), 0, 3)]
 
 
 func _wonder_blast(pos: Vector3, w: Dictionary) -> void:
 	var radius: float = G.WEAPONS[w.id].splash
 	var dmg: float = G.stat(w, "splash_dmg")
-	Fx.blast(get_parent(), pos, radius, Color(1.0, 0.3, 0.9) if w.up else Color(0.3, 1.0, 0.5))
+	Fx.blast(get_parent(), pos, radius, _wonder_color(w))
 	for z in get_tree().get_nodes_in_group("zombies"):
 		var zz := z as Zombie
 		if zz and zz.alive and zz.global_position.distance_to(pos) < radius + 0.5:
@@ -620,13 +624,13 @@ func _do_knife() -> void:
 		var zz := z as Zombie
 		if zz == null or not zz.alive:
 			continue
-		var to := zz.global_position + Vector3(0, 1.1, 0) - cam.global_position
+		var to := zz.aim_point() - cam.global_position
 		var d := to.length()
 		if d < best_d and fwd.dot(to.normalized()) > 0.55:
 			best = zz
 			best_d = d
 	if best:
-		var res := best.take_damage(KNIFE_DMG, best.global_position + Vector3(0, 1.2, 0), fwd, false, "knife", "")
+		var res := best.take_damage(KNIFE_DMG, best.aim_point(), fwd, false, "knife", "")
 		hit_confirmed.emit(res == "kill", false)
 		G.play("hit", 0.0)
 		G.play("killmarker" if res == "kill" else "hitmarker", -4.0)
@@ -645,9 +649,9 @@ func _start_snap() -> void:
 	var fwd := -cam.global_basis.z
 	for z in get_tree().get_nodes_in_group("zombies"):
 		var zz := z as Zombie
-		if zz == null or not zz.alive or zz.outside:
+		if zz == null or not zz.alive:
 			continue
-		var target := zz.global_position + Vector3(0, 1.25, 0)
+		var target := zz.aim_point()
 		var to := target - cam.global_position
 		if to.length() > 30.0:
 			continue
@@ -656,7 +660,7 @@ func _start_snap() -> void:
 			best_ang = ang
 			best = zz
 	if best:
-		var to := (best.global_position + Vector3(0, 1.25, 0) - cam.global_position).normalized()
+		var to := (best.aim_point() - cam.global_position).normalized()
 		_snap_yaw = atan2(-to.x, -to.z)
 		_snap_pitch = asin(clamp(to.y, -1.0, 1.0))
 		_snap_t = 0.14
@@ -734,10 +738,10 @@ func _bot_pick() -> void:
 	var best := 1e9
 	for z in get_tree().get_nodes_in_group("zombies"):
 		var zz := z as Zombie
-		if zz == null or not zz.alive or zz.outside:
+		if zz == null or not zz.alive:
 			continue
 		var d := global_position.distance_to(zz.global_position)
-		if d < best and _line_of_sight(zz.global_position + Vector3(0, 1.2, 0)):
+		if d < best and _line_of_sight(zz.aim_point()):
 			best = d
 			_bot_target = zz
 
@@ -752,7 +756,7 @@ func _bot_aim(delta: float) -> void:
 		if not w.is_empty() and w.mag < G.stat(w, "mag"):
 			start_reload()
 		return
-	var to := (_bot_target.global_position + Vector3(0, 1.3, 0) - cam.global_position).normalized()
+	var to := ((_bot_target as Zombie).aim_point() - cam.global_position).normalized()
 	var k := clampf(delta * 10.0, 0.0, 1.0)
 	_yaw = lerp_angle(_yaw, atan2(-to.x, -to.z), k)
 	_pitch = lerp(_pitch, asin(clamp(to.y, -1.0, 1.0)), k)
@@ -761,7 +765,7 @@ func _bot_aim(delta: float) -> void:
 func _bot_on_target() -> bool:
 	if _bot_target == null or not is_instance_valid(_bot_target):
 		return false
-	var to := (_bot_target.global_position + Vector3(0, 1.3, 0) - cam.global_position).normalized()
+	var to := ((_bot_target as Zombie).aim_point() - cam.global_position).normalized()
 	return (-cam.global_basis.z).angle_to(to) < deg_to_rad(4.0)
 
 

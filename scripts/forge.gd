@@ -7,6 +7,7 @@ enum State { IDLE, WORKING, READY }
 
 var state := State.IDLE
 var _weapon := ""
+var _tier := 1
 var _timer := 0.0
 var _display: Node3D
 var _label: Label3D
@@ -59,7 +60,7 @@ func build(pos: Vector3, facing: Vector3, metal: Material, mats: Dictionary, nav
 	body.add_child(title)
 	title.position = Vector3(0, 2.3, 0.62)
 	var price_label := Label3D.new()
-	price_label.text = "Amélioration %d" % G.UPGRADE_PRICE
+	price_label.text = "Amélioration %d / %d / %d" % G.UPGRADE_PRICES
 	price_label.font_size = 36
 	price_label.pixel_size = 0.004
 	price_label.modulate = Color(1, 0.85, 0.3)
@@ -104,11 +105,12 @@ func get_hint(player: Node) -> String:
 			var w: Dictionary = player.current_weapon()
 			if w.is_empty():
 				return ""
-			if w.up:
-				return "Arme déjà améliorée"
-			return "%s améliorer l'arme %s" % [use_text(), price_text(G.UPGRADE_PRICE)]
+			var tier := int(w.up)
+			if tier >= G.MAX_TIER:
+				return "Arme au niveau maximum"
+			return "%s améliorer l'arme (niveau %s) %s" % [use_text(), G.TIER_NAMES[tier + 1], price_text(G.UPGRADE_PRICES[tier])]
 		State.READY:
-			return "%s récupérer : %s" % [use_text(), G.WEAPONS[_weapon].up_name]
+			return "%s récupérer : %s" % [use_text(), G.weapon_name({"id": _weapon, "up": _tier})]
 	return "La forge travaille…"
 
 
@@ -116,20 +118,21 @@ func interact(player: Node) -> void:
 	match state:
 		State.IDLE:
 			var w: Dictionary = player.current_weapon()
-			if w.is_empty() or w.up or not player.can_drink():
+			if w.is_empty() or int(w.up) >= G.MAX_TIER or not player.can_drink():
 				return
-			if not G.spend(G.UPGRADE_PRICE):
+			if not G.spend(G.UPGRADE_PRICES[int(w.up)]):
 				return
 			_weapon = w.id
+			_tier = int(w.up) + 1
 			player.remove_current_weapon()
 			state = State.WORKING
 			_timer = 3.2
 			G.play_at("forge", global_position, get_parent())
-			_show(_weapon, false)
+			_show(_weapon, _tier - 1)
 			_label.text = ""
 			_light.light_energy = 2.0
 		State.READY:
-			player.give_weapon(_weapon, true)
+			player.give_weapon(_weapon, _tier)
 			state = State.IDLE
 			_clear()
 			_label.text = ""
@@ -141,14 +144,9 @@ func _clear() -> void:
 		c.queue_free()
 
 
-func _show(id: String, upgraded: bool) -> void:
+func _show(id: String, tier: int) -> void:
 	_clear()
-	var mats := _mats.duplicate()
-	if upgraded:
-		mats["dark"] = mats["up_dark"]
-		mats["metal"] = mats["up_metal"]
-		mats["glow"] = mats["up_glow"]
-	var m := GunShapes.build_model(id, mats, 1.0)
+	var m := GunShapes.build_model(id, G.gun_mats_for(tier), 1.0)
 	_display.add_child(m)
 	m.rotation.y = PI / 2
 	var sh := GunShapes.shape(id)
@@ -170,8 +168,9 @@ func _process(delta: float) -> void:
 				state = State.READY
 				_timer = 15.0
 				_display.rotation.y = 0.0
-				_show(_weapon, true)
-				_label.text = G.WEAPONS[_weapon].up_name
+				_show(_weapon, _tier)
+				_label.text = G.weapon_name({"id": _weapon, "up": _tier})
+				_label.modulate = G.tier_color(_tier)
 		State.READY:
 			_timer -= delta
 			_display.position.y = 1.3 + sin(_t * 2.0) * 0.05

@@ -114,7 +114,7 @@ func interact(player: Node) -> void:
 			if G.spend(G.BOX_PRICE):
 				_start(player)
 		State.READY:
-			player.give_weapon(_result, false)
+			player.give_weapon(_result, 0)
 			_close()
 
 

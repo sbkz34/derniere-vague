@@ -11,6 +11,8 @@ const L_PLAYER := 2
 const L_ZOMBIE := 4
 const L_INTERACT := 8
 const L_PICKUP := 16
+## Invisible walls that stop the player but not bullets (window openings).
+const L_PLAYER_BLOCK := 32
 
 # ------------------------------------------------------------------------------------------------
 # Weapons. dmg is per bullet / pellet; hs = headshot multiplier; rof = seconds between shots.
@@ -89,7 +91,7 @@ const POWERUPS := {
 	"carpenter": {"name": "Charpentier", "color": Color(0.7, 0.45, 0.25)},
 }
 
-const UPGRADE_PRICE := 5000
+
 const BOX_PRICE := 950
 
 # ------------------------------------------------------------------------------------------------
@@ -108,6 +110,8 @@ var god_mode := false
 var tour_mode := false
 var ui_test := false
 var view_test := false
+var window_test := false
+var dog_test := false
 var autostart := false
 var start_points := 500
 var quit_after_round := 0
@@ -157,6 +161,8 @@ func _ready() -> void:
 	tour_mode = args.has("--tour")
 	ui_test = args.has("--ui")
 	view_test = args.has("--viewtest")
+	window_test = args.has("--windowtest")
+	dog_test = args.has("--dogtest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
@@ -405,37 +411,61 @@ func apply_settings() -> void:
 # ------------------------------------------------------------------------------------------------
 # Weapon helpers
 # ------------------------------------------------------------------------------------------------
-func new_weapon(id: String, upgraded: bool) -> Dictionary:
-	var w := {"id": id, "up": upgraded, "mag": 0, "reserve": 0}
+# Upgrade tiers from the Forge: 0 = normal, 1 = violet, 2 = or (gold), 3 = ultime (red).
+const TIER_NAMES := ["", "Violet", "Or", "Ultime"]
+const TIER_COLORS := [Color(0.9, 0.9, 0.88), Color(0.85, 0.55, 1.0), Color(1.0, 0.8, 0.25), Color(1.0, 0.25, 0.2)]
+const UPGRADE_PRICES := [5000, 9000, 15000]   # price to reach tier 1, 2, 3
+const TIER_DMG := [1.0, 2.0, 3.5, 5.5]
+const TIER_MAG := [1.0, 1.5, 1.75, 2.0]
+const TIER_RESERVE := [1.0, 2.0, 2.5, 3.0]
+const TIER_ROF := [1.0, 0.9, 0.85, 0.78]
+const TIER_SPREAD := [1.0, 0.8, 0.7, 0.6]
+const MAX_TIER := 3
+
+
+func new_weapon(id: String, tier: int) -> Dictionary:
+	var w := {"id": id, "up": tier, "mag": 0, "reserve": 0}
 	w.mag = stat(w, "mag")
 	w.reserve = stat(w, "reserve")
 	return w
 
 
-## A weapon's stat, with the upgrade applied.
+## A weapon's stat, with its upgrade tier applied.
 func stat(w: Dictionary, key: String) -> Variant:
 	var base: Dictionary = WEAPONS[w.id]
 	var v: Variant = base.get(key, 0)
-	if not w.up:
+	var tier := int(w.up)
+	if tier <= 0:
 		return v
 	match key:
 		"dmg", "splash_dmg":
-			return v * 2
+			return v * TIER_DMG[tier]
 		"mag":
-			return 4 if w.id == "machoire" else int(ceil(v * 1.5))
+			if w.id == "machoire":
+				return 2 + 2 * tier
+			return int(ceil(v * TIER_MAG[tier]))
 		"reserve":
-			return v * 2
+			return int(v * TIER_RESERVE[tier])
 		"rof":
-			return v * 0.9
+			return v * TIER_ROF[tier]
 		"spread", "ads_spread":
-			return v * 0.8
+			return v * TIER_SPREAD[tier]
 		"pierce":
-			return v + 1
+			return v + tier
 	return v
 
 
 func weapon_name(w: Dictionary) -> String:
-	return WEAPONS[w.id].up_name if w.up else WEAPONS[w.id].name
+	var tier := int(w.up)
+	if tier <= 0:
+		return WEAPONS[w.id].name
+	if tier == 1:
+		return WEAPONS[w.id].up_name
+	return "%s — %s" % [WEAPONS[w.id].up_name, TIER_NAMES[tier]]
+
+
+func tier_color(tier: int) -> Color:
+	return TIER_COLORS[clampi(tier, 0, MAX_TIER)]
 
 
 var _gun_mats := {}
@@ -463,36 +493,41 @@ func gun_mats() -> Dictionary:
 	glow.emission_enabled = true
 	glow.emission = Color(0.3, 1.0, 0.45)
 	glow.emission_energy_multiplier = 2.5
-	var up_metal := StandardMaterial3D.new()
-	up_metal.albedo_color = Color(0.22, 0.1, 0.3)
-	up_metal.metallic = 0.85
-	up_metal.roughness = 0.25
-	up_metal.emission_enabled = true
-	up_metal.emission = Color(0.3, 0.06, 0.45)
-	up_metal.emission_energy_multiplier = 0.15
-	var up_dark := StandardMaterial3D.new()
-	up_dark.albedo_color = Color(0.07, 0.03, 0.1)
-	up_dark.roughness = 0.4
-	up_dark.emission_enabled = true
-	up_dark.emission = Color(0.5, 0.1, 0.8)
-	up_dark.emission_energy_multiplier = 0.08
-	var up_glow := StandardMaterial3D.new()
-	up_glow.albedo_color = Color(1.0, 0.3, 0.9)
-	up_glow.emission_enabled = true
-	up_glow.emission = Color(1.0, 0.25, 0.85)
-	up_glow.emission_energy_multiplier = 3.0
+	# Violet (tier 1): kept fairly light so it reads in dark rooms (no reflections on phones).
+	var up_metal := _mat(Color(0.42, 0.16, 0.62), 0.35, 0.3, Color(0.4, 0.1, 0.65), 0.25)
+	var up_dark := _mat(Color(0.17, 0.05, 0.26), 0.3, 0.4, Color(0.45, 0.1, 0.75), 0.12)
+	var up_glow := _mat(Color(1.0, 0.3, 0.9), 0.0, 0.5, Color(1.0, 0.25, 0.85), 3.0)
 	_gun_mats = {"metal": metal, "dark": dark, "wood": wood, "glow": glow,
 		"up_metal": up_metal, "up_dark": up_dark, "up_glow": up_glow}
+	# Gold (tier 2) and ultimate red (tier 3).
+	_gun_mats["gold_metal"] = _mat(Color(1.0, 0.76, 0.26), 0.35, 0.28, Color(0.85, 0.58, 0.12), 0.35)
+	_gun_mats["gold_dark"] = _mat(Color(0.72, 0.5, 0.12), 0.3, 0.35, Color(0.6, 0.4, 0.06), 0.2)
+	_gun_mats["gold_glow"] = _mat(Color(1.0, 0.85, 0.3), 0.0, 0.5, Color(1.0, 0.75, 0.2), 3.0)
+	_gun_mats["red_metal"] = _mat(Color(0.6, 0.06, 0.04), 0.35, 0.25, Color(0.9, 0.08, 0.03), 0.3)
+	_gun_mats["red_dark"] = _mat(Color(0.16, 0.02, 0.02), 0.3, 0.35, Color(0.9, 0.06, 0.02), 0.18)
+	_gun_mats["red_glow"] = _mat(Color(1.0, 0.2, 0.1), 0.0, 0.5, Color(1.0, 0.12, 0.03), 4.0)
 	return _gun_mats
 
 
-func gun_mats_for(upgraded: bool) -> Dictionary:
+func _mat(albedo: Color, metallic: float, rough: float, emission: Color, energy: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = albedo
+	m.metallic = metallic
+	m.roughness = rough
+	m.emission_enabled = true
+	m.emission = emission
+	m.emission_energy_multiplier = energy
+	return m
+
+
+func gun_mats_for(tier: int) -> Dictionary:
 	var m := gun_mats().duplicate()
-	if upgraded:
-		m["metal"] = m["up_metal"]
-		m["dark"] = m["up_dark"]
-		m["glow"] = m["up_glow"]
-		m["wood"] = m["up_dark"]
+	var prefix: String = ["", "up", "gold", "red"][clampi(tier, 0, MAX_TIER)]
+	if prefix != "":
+		m["metal"] = m[prefix + "_metal"]
+		m["dark"] = m[prefix + "_dark"]
+		m["glow"] = m[prefix + "_glow"]
+		m["wood"] = m[prefix + "_dark"]
 	return m
 
 
@@ -511,6 +546,10 @@ func zombie_count(r: int) -> int:
 		return table[r]
 	var k := r - 5
 	return int(24 + k * 3.5 + k * k * 0.15)
+
+
+func dog_health(r: int) -> float:
+	return zombie_health(r) * 0.4 + 100.0
 
 
 func spawn_delay(r: int) -> float:

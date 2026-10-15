@@ -25,6 +25,8 @@ var player_start := Vector3(0, 0.2, 2.0)
 var lights: Array[OmniLight3D] = []
 var _flicker: OmniLight3D
 var _baking := false
+var env: Environment
+var moon: DirectionalLight3D
 var _bake_again := false
 
 var m_concrete: StandardMaterial3D
@@ -220,7 +222,8 @@ func _environment() -> void:
 	env.adjustment_contrast = 1.08
 	we.environment = env
 	add_child(we)
-	var moon := DirectionalLight3D.new()
+	self.env = env
+	moon = DirectionalLight3D.new()
 	moon.light_color = Color(0.55, 0.62, 0.9)
 	moon.light_energy = 0.3
 	moon.rotation_degrees = Vector3(-50, 35, 0)
@@ -432,6 +435,14 @@ func _buyables() -> void:
 # ------------------------------------------------------------------------------------------------
 # Rooms, doors, navigation
 # ------------------------------------------------------------------------------------------------
+## Dog rounds: thick reddish fog and a darker sky; back to normal when the round ends.
+func set_storm(on: bool) -> void:
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(env, "fog_density", 0.075 if on else 0.035, 3.0)
+	tw.tween_property(env, "fog_light_color", Color(0.16, 0.06, 0.04) if on else Color(0.07, 0.08, 0.11), 3.0)
+	tw.tween_property(moon, "light_color", Color(1.0, 0.45, 0.3) if on else Color(0.55, 0.62, 0.9), 3.0)
+
+
 func room_at(p: Vector3) -> String:
 	for id in ROOMS:
 		var r: Dictionary = ROOMS[id]

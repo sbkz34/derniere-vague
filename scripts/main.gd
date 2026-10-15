@@ -94,7 +94,7 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test:
 		G.autostart = false
 		_start_game()
 	else:
@@ -103,6 +103,10 @@ func _ready() -> void:
 		_run_ui_test()
 	if G.view_test:
 		_run_view_test()
+	if G.window_test:
+		_run_window_test()
+	if G.dog_test:
+		_run_dog_test()
 
 
 func _start_game() -> void:
@@ -231,7 +235,10 @@ func _process(delta: float) -> void:
 			print("[test] t=%.0fs round=%d alive=%d to_spawn=%d kills=%d points=%d hp=%.0f fps=%d" % [_elapsed, G.round_num, director.alive, director.to_spawn, G.kills, G.points, player.hp, Engine.get_frames_per_second()])
 			for z in get_tree().get_nodes_in_group("zombies"):
 				var zz := z as Zombie
-				print("   zombie state=%s pos=%s outside=%s room=%s planks=%d busy=%s" % [Zombie.State.keys()[zz.state], zz.global_position.snapped(Vector3.ONE * 0.1), zz.outside, zz.window.room, zz.window.planks, zz.window.busy])
+				if zz.window:
+					print("   zombie state=%s pos=%s outside=%s room=%s planks=%d" % [Zombie.State.keys()[zz.state], zz.global_position.snapped(Vector3.ONE * 0.1), zz.outside, zz.window.room, zz.window.planks])
+				else:
+					print("   %s state=%s pos=%s" % [zz.kind, Zombie.State.keys()[zz.state], zz.global_position.snapped(Vector3.ONE * 0.1)])
 		_bot_economy()
 	if G.quit_after_time > 0.0 and _elapsed > G.quit_after_time:
 		print("[test] time limit: round=%d kills=%d" % [G.round_num, G.kills])
@@ -245,7 +252,7 @@ func _bot_economy() -> void:
 		return
 	if G.points >= 1500 and not player.has_weapon("faucon"):
 		G.points -= 1400
-		player.give_weapon("faucon", false)
+		player.give_weapon("faucon", 0)
 
 
 func _screenshot(tag: String) -> void:
@@ -309,10 +316,10 @@ func _run_tour() -> void:
 	# Each weapon in hand (hip and aimed).
 	_pose(Vector3(0, 0, 3), Vector3(-2.5, 1.5, -7))
 	for id in G.WEAPONS:
-		player.give_weapon(id, id == "faucon" or id == "desint", false)
+		player.give_weapon(id, 1 if id == "faucon" else (3 if id == "desint" else 0), false)
 		await _wait(0.5)
 		await _screenshot("weapon_" + id)
-	player.give_weapon("faucon", true, false)
+	player.give_weapon("faucon", 2, false)
 	await _wait(0.4)
 	# Zombies: one climbing in at the north window, one standing in the hall.
 	var north: Barricade = level.windows[0]
@@ -377,7 +384,7 @@ func _run_view_test() -> void:
 	await _wait(1.0)
 	_pose(Vector3(0, 0, 3), Vector3(-2.5, 1.5, -7))
 	for id in ["vipere", "faucon", "grele", "p9"]:
-		player.give_weapon(id, false, false)
+		player.give_weapon(id, 0, false)
 		player.debug_ads = false
 		await _wait(0.6)
 		await _screenshot(id + "_hip")
@@ -386,7 +393,7 @@ func _run_view_test() -> void:
 		await _screenshot(id + "_ads")
 	player.debug_ads = false
 	for id in ["faucon", "grele", "machoire", "taureau"]:
-		player.give_weapon(id, false, false)
+		player.give_weapon(id, 0, false)
 		await _wait(0.5)
 		var w := player.current_weapon()
 		w.mag = 0
@@ -408,4 +415,55 @@ func _run_view_test() -> void:
 	hud._on_round_started(7)
 	await _wait(2.0)
 	await _screenshot("hud_small_margin")
+	get_tree().quit()
+
+
+## Check: a zombie outside a window can be shot from inside, through the boarded opening.
+func _run_window_test() -> void:
+	director.set_process(false)
+	var north: Barricade = level.windows[0]
+	var z := Zombie.new()
+	z.setup(director, player, north, 0, 100000.0, "walk")
+	zombies.add_child(z)
+	z.global_position = north.outside_point(0)
+	z.state = Zombie.State.TEAR
+	z.reset_physics_interpolation()
+	player.global_position = north.inside_point() + north.inward * 3.0
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var origin := player.global_position + Vector3(0, 1.62, 0)
+	var hits := 0
+	for target_y in [1.2, 1.4, 1.7]:
+		var dir := (z.global_position + Vector3(0, target_y, 0) - origin).normalized()
+		var res := player._fire_ray(origin, dir, G.new_weapon("p9", 0))
+		if res.hit:
+			hits += 1
+	print("[windowtest] %s (%d/3 shots hit the zombie outside)" % ["OK" if hits == 3 else "FAILED", hits])
+	get_tree().quit()
+
+
+## Visual check: a dog in the hall, the storm, and the gold / ultimate weapon tiers.
+func _run_dog_test() -> void:
+	director.set_process(false)
+	player.targetable = false
+	await _wait(1.0)
+	_pose(Vector3(0, 0, 3), Vector3(0, 0.6, -1))
+	var d := Dog.new()
+	d.setup_dog(director, player, Vector3(0.3, 0, -0.5), 1000.0)
+	zombies.add_child(d)
+	Fx.blast(zombies, Vector3(0.3, 1, -0.5), 1.6, Color(0.55, 0.75, 1.0))
+	await _wait(0.1)
+	await _screenshot("dog_spawn")
+	await _wait(1.0)
+	await _screenshot("dog")
+	level.set_storm(true)
+	await _wait(3.5)
+	_pose(Vector3(0, 0, 3), Vector3(-2.5, 1.5, -7))
+	await _wait(0.3)
+	await _screenshot("storm")
+	level.set_storm(false)
+	for tier in [1, 2, 3]:
+		player.give_weapon("faucon", tier, false)
+		await _wait(0.5)
+		await _screenshot("faucon_tier%d" % tier)
 	get_tree().quit()

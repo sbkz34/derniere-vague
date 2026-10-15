@@ -60,16 +60,19 @@ jobs:
           ls -la build
           test -s build/derniere-vague.apk
 
-      - name: Check the game logic (bot plays two rounds)
+      - name: Check the game logic (bot plays six rounds, including a dog round)
         run: |
           set -o pipefail
-          timeout 300 "$HOME/godot" --headless --fixed-fps 60 --path . -- --bot --god --rounds=2 2>&1 \
+          timeout 300 "$HOME/godot" --headless --fixed-fps 60 --path . -- --bot --god --rounds=6 2>&1 \
             | grep -E "\[test\] reached|SCRIPT ERROR" | tee check.log
-          grep -q "reached round 3" check.log
+          grep -q "reached round 7" check.log
           ! grep -q "SCRIPT ERROR" check.log
           # Gamepad actions must work whatever device number the controller gets.
           timeout 60 "$HOME/godot" --headless --path . -- --inputtest 2>&1 | grep inputtest | tee input.log
           grep -q "\[inputtest\] OK" input.log
+          # Zombies outside a window must be shootable from inside.
+          timeout 60 "$HOME/godot" --headless --path . -- --windowtest 2>&1 | grep windowtest | tee window.log
+          grep -q "\[windowtest\] OK" window.log
 
       - name: Publish the release
         env:

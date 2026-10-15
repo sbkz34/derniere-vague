@@ -127,7 +127,7 @@ func _build(w: Dictionary) -> void:
 		return
 	var sh := GunShapes.shape(w.id)
 	_kind = sh.kind
-	_gun = GunShapes.build_model(w.id, G.gun_mats_for(w.up))
+	_gun = GunShapes.build_model(w.id, G.gun_mats_for(int(w.up)))
 	_gun_holder.add_child(_gun)
 	_muzzle = _gun.get_meta("muzzle")
 	_top = _gun.get_meta("top")

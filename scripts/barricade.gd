@@ -15,6 +15,8 @@ var inward := Vector3.FORWARD   # points into the room
 var along := Vector3.RIGHT      # wall direction
 var width := 2.0
 var busy := false               # a zombie is climbing through
+var climber: Node = null
+var _busy_since := 0.0
 var _plank_nodes: Array[Node3D] = []
 var _repair_timer := 0.0
 var _rest: Array[Transform3D] = []
@@ -33,7 +35,7 @@ func build(p_center: Vector3, p_inward: Vector3, p_width: float, wood: Material)
 	# Player blocker in the opening (zombies pass through it: they do not collide with the world
 	# while climbing).
 	var blocker := StaticBody3D.new()
-	blocker.collision_layer = G.L_WORLD
+	blocker.collision_layer = G.L_PLAYER_BLOCK
 	blocker.collision_mask = 0
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
@@ -90,6 +92,28 @@ func repair_one() -> void:
 func repair_all() -> void:
 	while planks < MAX_PLANKS:
 		repair_one()
+
+
+## One zombie climbs through at a time. A claim older than a few seconds (its zombie vanished
+## without letting go) no longer counts, so the window can never stay blocked.
+func claim(z: Node) -> void:
+	busy = true
+	climber = z
+	_busy_since = Time.get_ticks_msec() / 1000.0
+
+
+func release() -> void:
+	busy = false
+	climber = null
+
+
+func is_busy() -> bool:
+	if not busy:
+		return false
+	if climber == null or not is_instance_valid(climber) or Time.get_ticks_msec() / 1000.0 - _busy_since > 4.0:
+		release()
+		return false
+	return true
 
 
 func is_open() -> bool:
