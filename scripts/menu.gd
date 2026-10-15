@@ -192,7 +192,7 @@ func _build_options() -> Control:
 	_check(v, "Vibrations de la manette", "vibration")
 	_check(v, "Afficher les images par seconde", "show_fps")
 	_choice(v, "Images par seconde max.", "max_fps", [[60, "60"], [90, "90"], [120, "120"]])
-	_choice(v, "Résolution 3D", "render_scale", [[1.0, "100 %"], [0.85, "85 %"], [0.7, "70 %"], [0.55, "55 %"]])
+	_choice(v, "Résolution 3D", "render_scale", [[1.0, "100 %"], [0.85, "85 %"], [0.75, "75 %"], [0.6, "60 %"], [0.5, "50 %"]])
 	var back := _button(v, "Retour", _close_options)
 	back.name = "Back"
 	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

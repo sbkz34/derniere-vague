@@ -24,6 +24,7 @@ var _fps: Label
 var _reload_tip: Label
 var _round_tween: Tween
 var _hurt_t := 0.0
+var _br: VBoxContainer
 
 const RED := Color(0.78, 0.05, 0.03)
 
@@ -112,6 +113,7 @@ func build(p_player: Player, p_director: Director) -> void:
 
 	# Points, weapon and ammo (bottom right).
 	var br := VBoxContainer.new()
+	_br = br
 	br.anchor_left = 1.0
 	br.anchor_right = 1.0
 	br.anchor_top = 1.0
@@ -140,6 +142,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.anchor_left = 0.15
 	_hint.anchor_right = 0.85
+	_hint.offset_left = 0
+	_hint.offset_right = 0
 	_hint.offset_top = -150
 	_hint.offset_bottom = -110
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -148,6 +152,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_powerups.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_powerups.anchor_left = 0.2
 	_powerups.anchor_right = 0.8
+	_powerups.offset_left = 0
+	_powerups.offset_right = 0
 	_powerups.offset_top = -195
 	_powerups.offset_bottom = -155
 	_reload_tip = _label(_root, 24, Color(1, 1, 1), 6)
@@ -155,6 +161,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_reload_tip.set_anchors_preset(Control.PRESET_CENTER)
 	_reload_tip.anchor_left = 0.3
 	_reload_tip.anchor_right = 0.7
+	_reload_tip.offset_left = 0
+	_reload_tip.offset_right = 0
 	_reload_tip.offset_top = 50
 	_reload_tip.offset_bottom = 85
 
@@ -163,6 +171,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_msg.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_msg.anchor_left = 0.1
 	_msg.anchor_right = 0.9
+	_msg.offset_left = 0
+	_msg.offset_right = 0
 	_msg.offset_top = 90
 	_msg.offset_bottom = 150
 	_msg.modulate.a = 0.0
@@ -173,6 +183,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_fps.offset_top = 8
 	_fps.offset_right = -12
 
+	G.input_mode_changed.connect(_layout)
+	_layout(G.input_mode)
 	G.points_changed.connect(_on_points)
 	G.message.connect(_on_message)
 	player.weapons_changed.connect(_refresh_weapon)
@@ -185,6 +197,22 @@ func build(p_player: Player, p_director: Director) -> void:
 	_on_points(G.points, 0)
 	_refresh_weapon()
 	_refresh_perks()
+
+
+## On phones the fire button sits bottom right, so points and ammo move to the top right.
+func _layout(mode: String) -> void:
+	if mode == "touch":
+		_br.anchor_top = 0.0
+		_br.anchor_bottom = 0.0
+		_br.offset_top = -40
+		_br.offset_bottom = 200
+		_br.offset_right = -24
+	else:
+		_br.anchor_top = 1.0
+		_br.anchor_bottom = 1.0
+		_br.offset_top = -230
+		_br.offset_bottom = -24
+		_br.offset_right = -40
 
 
 func _on_points(points: int, delta: int) -> void:

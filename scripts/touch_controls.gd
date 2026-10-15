@@ -29,7 +29,7 @@ const STICK_R := 95.0
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_font = ThemeDB.fallback_font
 	G.input_mode_changed.connect(_on_mode)
@@ -65,9 +65,9 @@ func _buttons() -> Dictionary:
 		"fire": [Vector2(w - 165, h - 175), 78.0, "TIR"],
 		"ads": [Vector2(w - 330, h - 105), 52.0, "VISER"],
 		"jump": [Vector2(w - 330, h - 255), 46.0, "SAUT"],
-		"reload": [Vector2(w - 110, h - 345), 44.0, "RECH."],
+		"reload": [Vector2(w - 230, h - 330), 44.0, "RECH."],
 		"knife": [Vector2(w - 470, h - 80), 42.0, "COUTEAU"],
-		"swap": [Vector2(w - 95, h - 470), 40.0, "ARME"],
+		"swap": [Vector2(w - 95, h - 330), 40.0, "ARME"],
 		"pause": [Vector2(56, 56), 32.0, "II"],
 	}
 	if show_action:

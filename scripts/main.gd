@@ -81,12 +81,8 @@ func _ready() -> void:
 	menu_cam.current = true
 
 	ambient = AudioStreamPlayer.new()
-	var amb := G.sound("ambient") as AudioStreamWAV
+	var amb := G.sound("ambient")   # loops (set in its .import file)
 	if amb:
-		amb = amb.duplicate()
-		amb.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		amb.loop_begin = 0
-		amb.loop_end = amb.data.size() / 2
 		ambient.stream = amb
 		ambient.volume_db = -8.0
 		add_child(ambient)
@@ -103,6 +99,8 @@ func _ready() -> void:
 		_start_game()
 	else:
 		menu.show_title()
+	if G.ui_test:
+		_run_ui_test()
 
 
 func _start_game() -> void:
@@ -346,4 +344,26 @@ func _run_tour() -> void:
 	director.in_round = true
 	await _wait(10.0)
 	await _screenshot("fight")
+	get_tree().quit()
+
+
+## UI check: title screen, then the game with the touch controls, pause and game over.
+func _run_ui_test() -> void:
+	await _wait(1.5)
+	await _screenshot("title")
+	G.input_mode = "touch"
+	G.input_mode_changed.emit("touch")
+	_start_game()
+	await _wait(5.0)
+	await _screenshot("touch_hud")
+	G.input_mode = "pad"
+	G.input_mode_changed.emit("pad")
+	_toggle_pause()
+	await _wait(0.5)
+	await _screenshot("pause")
+	_resume()
+	G.god_mode = false
+	player.take_hit(500.0, player.global_position + Vector3(1, 0, 0))
+	await _wait(2.5)
+	await _screenshot("game_over")
 	get_tree().quit()

@@ -106,6 +106,7 @@ var input_mode := "kbm"  # "kbm", "pad" or "touch"
 var bot_mode := false
 var god_mode := false
 var tour_mode := false
+var ui_test := false
 var autostart := false
 var start_points := 500
 var quit_after_round := 0
@@ -119,7 +120,7 @@ var settings := {
 	"sens_touch": 1.0,
 	"invert_y": false,
 	"max_fps": 120,
-	"render_scale": 1.0,
+	"render_scale": 0.75 if OS.has_feature("mobile") else 1.0,
 	"volume": 0.8,
 	"show_fps": false,
 	"aim_assist": true,
@@ -149,6 +150,7 @@ func _ready() -> void:
 	bot_mode = args.has("--bot")
 	god_mode = args.has("--god")
 	tour_mode = args.has("--tour")
+	ui_test = args.has("--ui")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
