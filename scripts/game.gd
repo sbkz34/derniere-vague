@@ -131,6 +131,8 @@ var best_round := 0
 const SETTINGS_PATH := "user://settings.cfg"
 
 var _sounds := {}
+## Last gamepad input, shown in the options to check how a controller is seen.
+var last_pad_input := ""
 var _players: Array[AudioStreamPlayer] = []
 var _next_player := 0
 
@@ -162,6 +164,8 @@ func _ready() -> void:
 			start_points = int(a.substr(9))
 	if DisplayServer.is_touchscreen_available() and OS.has_feature("mobile"):
 		input_mode = "touch"
+	if args.has("--inputtest"):
+		_input_test.call_deferred()
 
 
 func reset_session() -> void:
@@ -255,15 +259,22 @@ func vibrate(weak: float, strong: float, duration: float) -> void:
 # ------------------------------------------------------------------------------------------------
 # Input map (built in code so it is easy to read and to change)
 # ------------------------------------------------------------------------------------------------
+## Device -1 = any device. Without it an action only reacts to device 0, and on Android the
+## gamepad is often not device 0 (another input device can take that slot).
+const ANY_DEVICE := -1
+
+
 func _key(action: String, keycode: Key) -> void:
 	var e := InputEventKey.new()
 	e.physical_keycode = keycode
+	e.device = ANY_DEVICE
 	InputMap.action_add_event(action, e)
 
 
 func _btn(action: String, button: JoyButton) -> void:
 	var e := InputEventJoypadButton.new()
 	e.button_index = button
+	e.device = ANY_DEVICE
 	InputMap.action_add_event(action, e)
 
 
@@ -271,6 +282,7 @@ func _axis(action: String, axis: JoyAxis, value: float) -> void:
 	var e := InputEventJoypadMotion.new()
 	e.axis = axis
 	e.axis_value = value
+	e.device = ANY_DEVICE
 	InputMap.action_add_event(action, e)
 
 
@@ -306,6 +318,8 @@ func _setup_input() -> void:
 
 	_add("fire", 0.3); _mouse("fire", MOUSE_BUTTON_LEFT); _axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
 	_add("ads", 0.3); _mouse("ads", MOUSE_BUTTON_RIGHT); _axis("ads", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	# Controllers whose triggers are plain buttons: Android L2 / R2 arrive as buttons 15 / 16.
+	_btn("ads", JOY_BUTTON_MISC1); _btn("fire", JOY_BUTTON_PADDLE1)
 	_add("reload"); _key("reload", KEY_R)
 	_add("interact"); _key("interact", KEY_E); _key("interact", KEY_F)
 	# Gamepad X/Square does both, like on console: interact when something is in reach, else reload.
@@ -318,9 +332,18 @@ func _setup_input() -> void:
 	_add("jump"); _key("jump", KEY_SPACE); _btn("jump", JOY_BUTTON_A)
 	_add("sprint"); _key("sprint", KEY_SHIFT); _btn("sprint", JOY_BUTTON_LEFT_STICK)
 	_add("pause"); _key("pause", KEY_ESCAPE); _key("pause", KEY_P); _btn("pause", JOY_BUTTON_START)
+	# Menus: make sure A confirms and B goes back whatever the device number.
+	_btn("ui_accept", JOY_BUTTON_A)
+	_btn("ui_cancel", JOY_BUTTON_B)
+	for pair in [["ui_up", JOY_BUTTON_DPAD_UP], ["ui_down", JOY_BUTTON_DPAD_DOWN], ["ui_left", JOY_BUTTON_DPAD_LEFT], ["ui_right", JOY_BUTTON_DPAD_RIGHT]]:
+		_btn(pair[0], pair[1])
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton and event.pressed:
+		last_pad_input = "bouton %d (manette %d)" % [event.button_index, event.device]
+	elif event is InputEventJoypadMotion and abs(event.axis_value) > 0.5:
+		last_pad_input = "axe %d = %.1f (manette %d)" % [event.axis, event.axis_value, event.device]
 	var mode := input_mode
 	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and abs(event.axis_value) > 0.4):
 		mode = "pad"
@@ -488,3 +511,35 @@ func zombie_count(r: int) -> int:
 
 func spawn_delay(r: int) -> float:
 	return max(0.45, 2.0 * pow(0.95, r - 1))
+
+
+## Test: a gamepad that is not device 0 (common on Android) must drive every action.
+func _input_test() -> void:
+	var ok := true
+	for dev in [0, 3, 17]:
+		for pair in [["jump", JOY_BUTTON_A], ["use", JOY_BUTTON_X], ["swap", JOY_BUTTON_Y], ["knife", JOY_BUTTON_B], ["pause", JOY_BUTTON_START]]:
+			var e := InputEventJoypadButton.new()
+			e.device = dev
+			e.button_index = pair[1]
+			e.pressed = true
+			if not InputMap.event_is_action(e, pair[0]):
+				print("[inputtest] FAIL device %d %s" % [dev, pair[0]])
+				ok = false
+		for pair in [["fire", JOY_AXIS_TRIGGER_RIGHT, 1.0], ["ads", JOY_AXIS_TRIGGER_LEFT, 1.0], ["move_forward", JOY_AXIS_LEFT_Y, -1.0], ["look_right", JOY_AXIS_RIGHT_X, 1.0]]:
+			var m := InputEventJoypadMotion.new()
+			m.device = dev
+			m.axis = pair[1]
+			m.axis_value = pair[2]
+			if not InputMap.event_is_action(m, pair[0]):
+				print("[inputtest] FAIL device %d %s" % [dev, pair[0]])
+				ok = false
+	# A touch turned into a mouse click must not fire the weapon.
+	var t := InputEventMouseButton.new()
+	t.device = InputEvent.DEVICE_ID_EMULATION
+	t.button_index = MOUSE_BUTTON_LEFT
+	t.pressed = true
+	if InputMap.event_is_action(t, "fire"):
+		print("[inputtest] FAIL emulated mouse fires")
+		ok = false
+	print("[inputtest] %s" % ("OK" if ok else "FAILED"))
+	get_tree().quit()

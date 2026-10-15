@@ -18,6 +18,7 @@ var _over_stats: Label
 var _best: Label
 var _options_back_to: Control
 var _theme: Theme
+var _pad_info: Label
 
 
 func _ready() -> void:
@@ -193,6 +194,11 @@ func _build_options() -> Control:
 	_check(v, "Afficher les images par seconde", "show_fps")
 	_choice(v, "Images par seconde max.", "max_fps", [[60, "60"], [90, "90"], [120, "120"]])
 	_choice(v, "Résolution 3D", "render_scale", [[1.0, "100 %"], [0.85, "85 %"], [0.75, "75 %"], [0.6, "60 %"], [0.5, "50 %"]])
+	_pad_info = Label.new()
+	_pad_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pad_info.add_theme_font_size_override("font_size", 20)
+	_pad_info.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+	v.add_child(_pad_info)
 	var back := _button(v, "Retour", _close_options)
 	back.name = "Back"
 	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -323,3 +329,15 @@ func is_open() -> bool:
 
 func options_open() -> bool:
 	return _options.visible
+
+
+func _process(_delta: float) -> void:
+	if _options.visible and _pad_info:
+		var pads := Input.get_connected_joypads()
+		var names: Array[String] = []
+		for d in pads:
+			names.append("%s (n°%d)" % [Input.get_joy_name(d), d])
+		var t := "Manette : " + (", ".join(names) if not names.is_empty() else "aucune détectée")
+		if G.last_pad_input != "":
+			t += "\nDernière touche : " + G.last_pad_input
+		_pad_info.text = t

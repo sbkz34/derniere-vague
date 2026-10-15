@@ -67,6 +67,9 @@ jobs:
             | grep -E "\[test\] reached|SCRIPT ERROR" | tee check.log
           grep -q "reached round 3" check.log
           ! grep -q "SCRIPT ERROR" check.log
+          # Gamepad actions must work whatever device number the controller gets.
+          timeout 60 "$HOME/godot" --headless --path . -- --inputtest 2>&1 | grep inputtest | tee input.log
+          grep -q "\[inputtest\] OK" input.log
 
       - name: Publish the release
         env:
