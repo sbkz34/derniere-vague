@@ -5,11 +5,16 @@ extends Control
 var player: Player
 var _hit_t := 0.0
 var _hit_kill := false
+var _hit_head := false
 
 
-func hitmarker(kill: bool, _head: bool) -> void:
-	_hit_t = 0.22
+const HIT_TIME := 0.3
+
+
+func hitmarker(kill: bool, head: bool) -> void:
+	_hit_t = HIT_TIME
 	_hit_kill = kill
+	_hit_head = head
 
 
 func _process(delta: float) -> void:
@@ -63,7 +68,18 @@ func _draw() -> void:
 		if ads > 0.5:
 			draw_circle(c, 2.0, Color(1, 1, 1, 0.8))
 	if _hit_t > 0.0:
-		var a := clampf(_hit_t / 0.22, 0.0, 1.0)
-		var hc := Color(1, 0.2, 0.15, a) if _hit_kill else Color(1, 1, 1, a)
+		# Hit marker: an X that pops out then fades. White = hit, yellow = head, red = kill.
+		var k := clampf(_hit_t / HIT_TIME, 0.0, 1.0)
+		var a := clampf(k * 1.6, 0.0, 1.0)
+		var pop := 1.0 + 0.35 * maxf(0.0, (k - 0.7) / 0.3)
+		var hc := Color(1, 1, 1, a)
+		if _hit_head:
+			hc = Color(1, 0.85, 0.2, a)
+		if _hit_kill:
+			hc = Color(1, 0.18, 0.12, a)
+		var inner := 9.0 * pop
+		var outer := (24.0 if _hit_kill else 20.0) * pop
 		for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
-			draw_line(c + d * 7, c + d * 16, hc, 3.0)
+			var dn: Vector2 = d.normalized()
+			draw_line(c + dn * inner, c + dn * outer, Color(0, 0, 0, a * 0.7), 6.0)
+			draw_line(c + dn * inner, c + dn * outer, hc, 3.5)

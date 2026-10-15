@@ -25,6 +25,7 @@ var _reload_tip: Label
 var _round_tween: Tween
 var _hurt_t := 0.0
 var _br: VBoxContainer
+var _frame: Control   # everything that follows the HUD size / edge margin settings
 
 const RED := Color(0.78, 0.05, 0.03)
 
@@ -94,6 +95,13 @@ func build(p_player: Player, p_director: Director) -> void:
 	_cross.player = player
 	_root.add_child(_cross)
 
+	# Corner elements live in a frame that can be scaled and pulled in from the screen edges
+	# (options), e.g. for curved screens.
+	_frame = Control.new()
+	_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_frame)
+
 	# Round counter (bottom left) with perk icons above it.
 	var bl := VBoxContainer.new()
 	bl.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -104,7 +112,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	bl.offset_bottom = -20
 	bl.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	bl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(bl)
+	_frame.add_child(bl)
 	_perks = HBoxContainer.new()
 	_perks.add_theme_constant_override("separation", 8)
 	bl.add_child(_perks)
@@ -124,7 +132,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	br.offset_bottom = -24
 	br.alignment = BoxContainer.ALIGNMENT_END
 	br.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(br)
+	_frame.add_child(br)
 	_popups = VBoxContainer.new()
 	_popups.alignment = BoxContainer.ALIGNMENT_END
 	_popups.custom_minimum_size = Vector2(0, 70)
@@ -137,7 +145,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	_ammo.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	# Hint (bottom centre) and active bonuses above it.
-	_hint = _label(_root, 26, Color(1, 1, 1), 7)
+	_hint = _label(_frame, 26, Color(1, 1, 1), 7)
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.anchor_left = 0.15
@@ -147,7 +155,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	_hint.offset_top = -150
 	_hint.offset_bottom = -110
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_powerups = _label(_root, 26, Color(1, 0.9, 0.4), 7)
+	_powerups = _label(_frame, 26, Color(1, 0.9, 0.4), 7)
 	_powerups.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_powerups.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_powerups.anchor_left = 0.2
@@ -156,7 +164,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	_powerups.offset_right = 0
 	_powerups.offset_top = -195
 	_powerups.offset_bottom = -155
-	_reload_tip = _label(_root, 24, Color(1, 1, 1), 6)
+	_reload_tip = _label(_frame, 24, Color(1, 1, 1), 6)
 	_reload_tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_reload_tip.set_anchors_preset(Control.PRESET_CENTER)
 	_reload_tip.anchor_left = 0.3
@@ -166,7 +174,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	_reload_tip.offset_top = 50
 	_reload_tip.offset_bottom = 85
 
-	_msg = _label(_root, 42, Color.WHITE, 9)
+	_msg = _label(_frame, 42, Color.WHITE, 9)
 	_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_msg.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_msg.anchor_left = 0.1
@@ -177,7 +185,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	_msg.offset_bottom = 150
 	_msg.modulate.a = 0.0
 
-	_fps = _label(_root, 18, Color(0.7, 1, 0.7), 4)
+	_fps = _label(_frame, 18, Color(0.7, 1, 0.7), 4)
 	_fps.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_fps.offset_left = -140
 	_fps.offset_top = 8
@@ -297,9 +305,22 @@ func _on_round_ended(_n: int) -> void:
 	_round_tween.tween_property(_round, "modulate:a", 1.0, 0.5)
 
 
+func _apply_frame() -> void:
+	var vs := get_viewport().get_visible_rect().size
+	var m := float(G.settings.hud_margin)
+	var sc := float(G.settings.hud_scale)
+	_frame.offset_left = vs.x * m
+	_frame.offset_right = -vs.x * m
+	_frame.offset_top = vs.y * m * 0.5
+	_frame.offset_bottom = -vs.y * m * 0.5
+	_frame.pivot_offset = (vs - Vector2(vs.x * m * 2.0, vs.y * m)) / 2.0
+	_frame.scale = Vector2(sc, sc)
+
+
 func _process(delta: float) -> void:
 	if player == null:
 		return
+	_apply_frame()
 	# Hint text.
 	_hint.text = player.hint
 	# Low ammo / reload reminder.

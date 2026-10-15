@@ -59,7 +59,9 @@ func consume_look() -> Vector2:
 
 
 func _buttons() -> Dictionary:
-	var w := size.x
+	# Buttons keep clear of the screen edges by the margin set in the options.
+	var m := size.x * float(G.settings.hud_margin)
+	var w := size.x - m
 	var h := size.y
 	var b := {
 		"fire": [Vector2(w - 165, h - 175), 78.0, "TIR"],
@@ -68,7 +70,7 @@ func _buttons() -> Dictionary:
 		"reload": [Vector2(w - 230, h - 330), 44.0, "RECH."],
 		"knife": [Vector2(w - 470, h - 80), 42.0, "COUTEAU"],
 		"swap": [Vector2(w - 95, h - 330), 40.0, "ARME"],
-		"pause": [Vector2(56, 56), 32.0, "II"],
+		"pause": [Vector2(56 + m, 56), 32.0, "II"],
 	}
 	if show_action:
 		b["action"] = [Vector2(w - 480, h - 230), 56.0, "ACTION"]

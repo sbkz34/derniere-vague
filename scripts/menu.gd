@@ -188,6 +188,8 @@ func _build_options() -> Control:
 	_slider(v, "Sensibilité manette", "sens_pad", 0.3, 2.5, 0.05)
 	_slider(v, "Sensibilité tactile", "sens_touch", 0.3, 2.5, 0.05)
 	_slider(v, "Volume", "volume", 0.0, 1.0, 0.05)
+	_slider(v, "Taille de l'interface", "hud_scale", 0.6, 1.3, 0.05)
+	_slider(v, "Marge des bords (écran incurvé)", "hud_margin", 0.0, 0.12, 0.01)
 	_check(v, "Assistance à la visée (manette / tactile)", "aim_assist")
 	_check(v, "Inverser l'axe vertical", "invert_y")
 	_check(v, "Vibrations de la manette", "vibration")

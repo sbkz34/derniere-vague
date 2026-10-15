@@ -94,13 +94,15 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test:
 		G.autostart = false
 		_start_game()
 	else:
 		menu.show_title()
 	if G.ui_test:
 		_run_ui_test()
+	if G.view_test:
+		_run_view_test()
 
 
 func _start_game() -> void:
@@ -366,4 +368,44 @@ func _run_ui_test() -> void:
 	player.take_hit(500.0, player.global_position + Vector3(1, 0, 0))
 	await _wait(2.5)
 	await _screenshot("game_over")
+	get_tree().quit()
+
+
+## Weapon view check: hip / aimed, reload phases, hit markers, HUD size and margins.
+func _run_view_test() -> void:
+	director.set_process(false)
+	await _wait(1.0)
+	_pose(Vector3(0, 0, 3), Vector3(-2.5, 1.5, -7))
+	for id in ["vipere", "faucon", "grele", "p9"]:
+		player.give_weapon(id, false, false)
+		player.debug_ads = false
+		await _wait(0.6)
+		await _screenshot(id + "_hip")
+		player.debug_ads = true
+		await _wait(0.6)
+		await _screenshot(id + "_ads")
+	player.debug_ads = false
+	for id in ["faucon", "grele", "machoire", "taureau"]:
+		player.give_weapon(id, false, false)
+		await _wait(0.5)
+		var w := player.current_weapon()
+		w.mag = 0
+		player.start_reload()
+		var t := player._reload_t
+		for frac in [0.2, 0.35, 0.5, 0.65, 0.78]:
+			await _wait(t * (frac - (0.0 if frac == 0.2 else [0.2, 0.35, 0.5, 0.65, 0.78][[0.2, 0.35, 0.5, 0.65, 0.78].find(frac) - 1])))
+			await _screenshot("%s_reload_%d" % [id, int(frac * 100)])
+		await _wait(t * 0.3)
+	player.hit_confirmed.emit(false, false)
+	await _wait(0.03)
+	await _screenshot("hitmarker")
+	player.hit_confirmed.emit(true, true)
+	await _wait(0.03)
+	await _screenshot("killmarker")
+	G.settings.hud_scale = 0.8
+	G.settings.hud_margin = 0.08
+	G.round_num = 7
+	hud._on_round_started(7)
+	await _wait(2.0)
+	await _screenshot("hud_small_margin")
 	get_tree().quit()

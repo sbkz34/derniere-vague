@@ -227,6 +227,58 @@ r[int(SR * 0.05):int(SR * 0.05) + len(c1)] += c1
 r[int(SR * 0.55):int(SR * 0.55) + len(c2)] += c2 * 1.2
 write("reload.wav", r)
 
+
+def place(total, events):
+    """Mixes (start_time, signal, gain) events into one buffer of `total` seconds."""
+    out = np.zeros(int(SR * total))
+    for start, sig, gain in events:
+        s = int(SR * start)
+        n = min(len(sig), len(out) - s)
+        out[s:s + n] += sig[:n] * gain
+    return out
+
+
+def metal_tick(hz, decay, dur=0.12):
+    tt = t(dur)
+    ring = np.sin(2 * np.pi * hz * tt) * np.exp(-tt / decay)
+    return ring * 0.5 + highpass(white(dur), 2500) * np.exp(-tt / (decay * 0.4))
+
+
+def thud(dur=0.15, cutoff=600, decay=0.03):
+    return lowpass(white(dur), cutoff) * env(dur, 0.001, decay)
+
+
+# Magazine out: release click, then the mag sliding out.
+slide = highpass(white(0.18), 1200) * np.sin(np.pi * t(0.18) / 0.18) * 0.4
+write("mag_out.wav", place(0.4, [(0.0, metal_tick(2200, 0.012), 1.0), (0.05, slide, 1.0)]))
+# Magazine in: sliding in, then a solid clack.
+write("mag_in.wav", place(0.35, [(0.0, slide[::-1], 0.8), (0.14, thud(0.15, 900, 0.025), 1.6),
+                                  (0.14, metal_tick(1500, 0.02), 0.9)]))
+# Bolt / charging handle: pulled back, released forward.
+write("bolt.wav", place(0.45, [(0.0, metal_tick(1800, 0.015), 1.0), (0.02, slide[:3000], 0.6),
+                                (0.2, metal_tick(1100, 0.03), 1.2), (0.2, thud(0.12, 700, 0.02), 1.4)]))
+# Pump action: shuck back, shuck forward.
+shuck = lowpass(white(0.12), 2500) * env(0.12, 0.002, 0.03)
+write("pump.wav", place(0.45, [(0.0, shuck, 1.2), (0.0, metal_tick(900, 0.02), 0.6),
+                                (0.2, shuck, 1.3), (0.2, metal_tick(700, 0.03), 0.8)]))
+# One shell pushed into a tube / chamber.
+write("shell_in.wav", place(0.2, [(0.0, metal_tick(2600, 0.01), 0.8), (0.03, thud(0.1, 1200, 0.02), 1.0)]))
+# Break-action open / close.
+write("break_open.wav", place(0.4, [(0.0, metal_tick(800, 0.04), 1.2), (0.0, thud(0.2, 400, 0.05), 1.0)]))
+write("break_close.wav", place(0.3, [(0.0, metal_tick(1300, 0.025), 1.2), (0.0, thud(0.12, 800, 0.02), 1.6)]))
+# Revolver cylinder: swing out with ratchet clicks.
+write("cylinder.wav", place(0.5, [(i * 0.05, metal_tick(3000 - i * 150, 0.006, 0.05), 0.6) for i in range(6)]
+                            + [(0.32, thud(0.12, 900, 0.02), 1.3)]))
+# Energy cell: eject hiss, then a rising charge whine.
+d = 0.9
+whine_f = 300 + 1500 * (t(d) / d) ** 2
+whine = np.sin(2 * np.pi * np.cumsum(whine_f) / SR) * np.clip(t(d) / 0.1, 0, 1) * np.exp(-((t(d) - d) ** 2) / 0.02)
+write("energy_reload.wav", place(1.1, [(0.0, highpass(white(0.25), 3000) * env(0.25, 0.005, 0.08), 0.8),
+                                       (0.15, whine, 0.7)]))
+# Hit marker: short bright tick; kill marker: lower, punchier.
+write("hitmarker.wav", place(0.12, [(0.0, metal_tick(3200, 0.012, 0.1), 1.0)]))
+write("killmarker.wav", place(0.25, [(0.0, metal_tick(1800, 0.03, 0.2), 1.0), (0.0, thud(0.15, 500, 0.04), 1.2)]))
+
 d = 0.25
 sw = lowpass(white(d), 600 + 4000 * np.sin(np.pi * t(d) / d)) * np.sin(np.pi * t(d) / d) ** 2
 write("knife.wav", sw)
@@ -236,7 +288,6 @@ write("hit.wav", lowpass(white(d), 900) * env(d, 0.001, 0.04) + np.sin(2 * np.pi
 d = 0.35
 write("headshot.wav", lowpass(white(d), 2200) * env(d, 0.001, 0.08) + 0.6 * np.sin(2 * np.pi * 60 * t(d)) * env(d, 0.001, 0.1))
 d = 0.12
-write("hitmarker.wav", np.sin(2 * np.pi * 2800 * t(d)) * env(d, 0.001, 0.02))
 
 d = 0.5
 cr = highpass(white(d), 800) * env(d, 0.001, 0.05)

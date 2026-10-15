@@ -107,6 +107,7 @@ var bot_mode := false
 var god_mode := false
 var tour_mode := false
 var ui_test := false
+var view_test := false
 var autostart := false
 var start_points := 500
 var quit_after_round := 0
@@ -125,6 +126,8 @@ var settings := {
 	"show_fps": false,
 	"aim_assist": true,
 	"vibration": true,
+	"hud_scale": 1.0,
+	"hud_margin": 0.0,
 }
 var best_round := 0
 
@@ -153,6 +156,7 @@ func _ready() -> void:
 	god_mode = args.has("--god")
 	tour_mode = args.has("--tour")
 	ui_test = args.has("--ui")
+	view_test = args.has("--viewtest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)

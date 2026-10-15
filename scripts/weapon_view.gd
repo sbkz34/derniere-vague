@@ -26,6 +26,14 @@ var _anim_t := 0.0
 var _anim_len := 1.0
 var _pending_weapon: Dictionary = {}
 var _pending_set := false
+var _roles := {}           # moving parts: "mag", "bolt", "pump", "barrel", "cyl"
+var _rest := {}
+var _left: Node3D
+var _left_rest := Vector3.ZERO
+var _top := 0.1
+var _reload_empty := false
+var _marks: Array = []     # [phase 0..1, sound] played during the reload
+var _mark_i := 0
 var _skin: StandardMaterial3D
 var _sleeve: StandardMaterial3D
 var _glove: StandardMaterial3D
@@ -122,6 +130,15 @@ func _build(w: Dictionary) -> void:
 	_gun = GunShapes.build_model(w.id, G.gun_mats_for(w.up))
 	_gun_holder.add_child(_gun)
 	_muzzle = _gun.get_meta("muzzle")
+	_top = _gun.get_meta("top")
+	_roles.clear()
+	_rest.clear()
+	for role in ["mag", "bolt", "pump", "barrel", "cyl"]:
+		var n := _gun.get_node_or_null(role) as Node3D
+		if n:
+			_roles[role] = n
+			_rest[role] = n.transform
+	_left = null
 	_gun.add_child(_flash)
 	_flash.position = _muzzle + Vector3(0, 0, -0.06)
 	# Right hand on the grip, forearm going down and back; left hand forward on the gun
@@ -141,6 +158,8 @@ func _build(w: Dictionary) -> void:
 		_gun.add_child(left)
 		left.position = Vector3(-0.02, -0.035, -min(0.42, length * 0.45))
 		left.rotation = Vector3(0, -0.3, 0.3)
+		_left = left
+		_left_rest = left.position
 		_box(left, Vector3(0, 0, 0), Vector3(0.07, 0.075, 0.09), _glove)
 		var l_arm := _box(left, Vector3(-0.05, -0.08, 0.14), Vector3(0.075, 0.075, 0.24), _skin)
 		l_arm.rotation.x = 0.5
@@ -159,6 +178,7 @@ func set_weapon(w: Dictionary, animate := true) -> void:
 
 
 func play_anim(name: String, length: float) -> void:
+	_reset_parts()
 	_anim = name
 	_anim_t = 0.0
 	_anim_len = max(0.05, length)
@@ -166,6 +186,114 @@ func play_anim(name: String, length: float) -> void:
 		_knife.visible = true
 	if name == "drink":
 		_bottle.visible = true
+
+
+## Reload with moving parts and timed sounds. empty: the chamber was empty (bolt / pump at the
+## end); shells: rounds to load for weapons loaded one by one.
+func play_reload(length: float, empty: bool, shells: int) -> void:
+	play_anim("reload", length)
+	_reload_empty = empty
+	_marks.clear()
+	_mark_i = 0
+	match _kind:
+		"shotgun":
+			var n := clampi(shells, 1, 6)
+			for i in n:
+				_marks.append([0.15 + 0.65 * (i + 0.5) / n, "shell_in"])
+			if empty:
+				_marks.append([0.88, "pump"])
+		"double":
+			_marks = [[0.06, "break_open"], [0.42, "shell_in"], [0.56, "shell_in"], [0.82, "break_close"]]
+		"revolver":
+			_marks = [[0.06, "cylinder"], [0.38, "shell_in"], [0.5, "shell_in"], [0.62, "shell_in"], [0.84, "break_close"]]
+		"wonder":
+			_marks = [[0.08, "energy_reload"]]
+		"sniper":
+			_marks = [[0.06, "bolt"], [0.25, "mag_out"], [0.58, "mag_in"], [0.82, "bolt"]]
+		_:
+			_marks = [[0.12, "mag_out"], [0.56, "mag_in"]]
+			if empty:
+				_marks.append([0.76, "bolt"])
+
+
+func _reset_parts() -> void:
+	for role in _roles:
+		var n: Node3D = _roles[role]
+		if is_instance_valid(n):
+			n.transform = _rest[role]
+			n.visible = true
+	if _left and is_instance_valid(_left):
+		_left.position = _left_rest
+
+
+static func _ramp(p: float, a: float, b: float) -> float:
+	return clampf((p - a) / (b - a), 0.0, 1.0)
+
+
+## Moves the weapon's parts for reload phase p (0..1); returns extra [position, rotation].
+func _reload_pose(p: float) -> Array:
+	var hold := _ramp(p, 0.0, 0.12) * (1.0 - _ramp(p, 0.88, 1.0))
+	# Muzzle up, turned and rolled towards the player: the magazine well faces the camera.
+	var pos := Vector3(-0.05, -0.01, 0.03) * hold
+	var rot := Vector3(0.22, 0.22, 0.32) * hold
+	while _mark_i < _marks.size() and p >= _marks[_mark_i][0]:
+		G.play(_marks[_mark_i][1], -3.0, randf_range(0.95, 1.05))
+		_mark_i += 1
+	match _kind:
+		"shotgun":
+			rot.z += 0.35 * hold
+			for m in _marks:
+				if m[1] == "shell_in":
+					var k := 1.0 - absf(p - m[0]) / 0.05
+					if k > 0.0:
+						rot.x += 0.06 * k
+			if _roles.has("pump") and _reload_empty:
+				var back := _ramp(p, 0.86, 0.9) * (1.0 - _ramp(p, 0.92, 0.97))
+				_roles.pump.transform = _rest.pump.translated_local(Vector3(0, 0, 0.09 * back))
+			if _left:
+				_left.position = _left_rest.lerp(Vector3(-0.05, -0.02, -0.15), hold * (1.0 - _ramp(p, 0.84, 0.88)))
+		"double":
+			var open := _ramp(p, 0.04, 0.16) * (1.0 - _ramp(p, 0.78, 0.86))
+			if _roles.has("barrel"):
+				var t: Transform3D = _rest.barrel
+				_roles.barrel.transform = t.rotated_local(Vector3.RIGHT, -0.55 * open)
+			rot.x += 0.25 * open
+		"revolver":
+			var out := _ramp(p, 0.04, 0.14) * (1.0 - _ramp(p, 0.8, 0.88))
+			if _roles.has("cyl"):
+				_roles.cyl.transform = _rest.cyl.translated_local(Vector3(-0.045 * out, 0, 0))
+			rot.z += 0.3 * out
+		"wonder":
+			var lift := _ramp(p, 0.08, 0.3) * (1.0 - _ramp(p, 0.55, 0.75))
+			if _roles.has("mag"):
+				_roles.mag.transform = _rest.mag.translated_local(Vector3(0.06 * lift, 0.14 * lift, 0))
+				_roles.mag.visible = lift < 0.95
+		_:
+			# Magazine: drops out, gone for a moment, a fresh one slides back in.
+			if _roles.has("mag"):
+				var drop := _ramp(p, 0.12, 0.3)
+				var insert := _ramp(p, 0.42, 0.56)
+				var off := 0.0
+				if p < 0.42:
+					off = -0.32 * drop
+				else:
+					off = -0.32 * (1.0 - insert)
+				_roles.mag.transform = _rest.mag.translated_local(Vector3(0, off, 0.04 * absf(off)))
+				_roles.mag.visible = not (p > 0.3 and p < 0.42)
+				if _left:
+					# The left hand goes for the new magazine and pushes it in.
+					var reach := _ramp(p, 0.1, 0.22) * (1.0 - _ramp(p, 0.6, 0.72))
+					var mag_pos: Vector3 = _rest.mag.origin + Vector3(-0.03, -0.06 + off, 0.03)
+					_left.position = _left_rest.lerp(mag_pos, reach)
+			var cock := 0.0
+			if _kind == "sniper":
+				cock = _ramp(p, 0.04, 0.1) * (1.0 - _ramp(p, 0.12, 0.18)) + _ramp(p, 0.8, 0.86) * (1.0 - _ramp(p, 0.88, 0.94))
+			elif _reload_empty:
+				cock = _ramp(p, 0.74, 0.79) * (1.0 - _ramp(p, 0.8, 0.84))
+			if _roles.has("bolt") and cock > 0.0:
+				_roles.bolt.transform = _rest.bolt.translated_local(Vector3(0, 0, 0.06 * cock))
+			rot.y += 0.12 * cock
+	return [pos, rot]
 
 
 func set_bottle_color(c: Color) -> void:
@@ -178,7 +306,9 @@ func shot(kick: float) -> void:
 	_kick_rot = min(_kick_rot + 0.04 + kick * 0.02, 0.35)
 	_flash_t = 0.05
 	_flash.rotation.z = randf() * TAU
-	_flash.scale = Vector3.ONE * randf_range(0.8, 1.3)
+	# Smaller, dimmer flash when aiming: it sits right in front of the eye.
+	_flash.scale = Vector3.ONE * randf_range(0.8, 1.3) * lerpf(1.0, 0.3, ads)
+	_flash_light.light_energy = lerpf(2.5, 0.8, ads)
 
 
 func muzzle_global() -> Vector3:
@@ -200,16 +330,13 @@ func hip_pos() -> Vector3:
 	return Vector3(0.19, -0.23, -0.36)
 
 
+## Aiming: the gun is centred with its top edge just below the crosshair, so the target stays
+## visible (the sniper shows its scope instead).
 func ads_pos() -> Vector3:
-	if _kind in ["pistol", "revolver"]:
-		return Vector3(0.0, -0.085, -0.42)
 	if _kind == "sniper":
 		return Vector3(0.0, -0.13, -0.24)
-	if _kind == "wonder":
-		return Vector3(0.0, -0.15, -0.4)
-	if _kind in ["shotgun", "double"]:
-		return Vector3(0.0, -0.095, -0.3)
-	return Vector3(0.0, -0.1, -0.3)
+	var z := -0.42 if _kind in ["pistol", "revolver"] else -0.3
+	return Vector3(0.0, -(_top + 0.018), z)
 
 
 func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) -> void:
@@ -239,8 +366,9 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 		var dip := sin(p * PI)
 		match _anim:
 			"reload":
-				base += Vector3(-0.03, -0.12, 0.04) * dip
-				rot += Vector3(-0.45, 0.25, 0.6) * dip
+				var pose := _reload_pose(p)
+				base += pose[0]
+				rot += pose[1]
 			"swap":
 				base += Vector3(0, -0.45, 0.1) * dip
 				rot += Vector3(-0.6, 0, 0) * dip
@@ -257,6 +385,8 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 				_bottle.position = Vector3(0.02, -0.35 + 0.25 * lift, -0.25)
 				_bottle.rotation = Vector3(0.3 + 1.2 * lift, 0, 0)
 		if p >= 1.0:
+			if _anim == "reload":
+				_reset_parts()
 			if _anim == "knife":
 				_knife.visible = false
 			if _anim == "drink":

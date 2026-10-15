@@ -65,6 +65,7 @@ var hint := ""
 # Bot mode (automated test): aims at the nearest zombie and fires.
 var _bot_target: Node3D
 var _bot_retarget := 0.0
+var debug_ads := false   # tests: hold aim
 
 
 func _ready() -> void:
@@ -382,6 +383,8 @@ func _update_look(delta: float) -> void:
 
 
 func _ads_input() -> bool:
+	if debug_ads:
+		return true
 	if G.bot_mode:
 		return _bot_target != null
 	var held := Input.is_action_pressed("ads")
@@ -471,8 +474,7 @@ func start_reload() -> void:
 		return
 	_reload_t = reload_time()
 	_ads_held = false
-	view.play_anim("reload", _reload_t)
-	G.play("reload", -2.0, 1.0 / max(0.5, _reload_t / 1.4))
+	view.play_reload(_reload_t, w.mag == 0, int(G.stat(w, "mag")) - int(w.mag))
 
 
 func _update_weapon(delta: float) -> void:
@@ -545,7 +547,7 @@ func _shoot(w: Dictionary) -> void:
 		any_head = any_head or res.head
 	if any_hit:
 		hit_confirmed.emit(any_kill, any_head)
-		G.play("hitmarker", -10.0 if not any_kill else -6.0, 1.0 if not any_kill else 0.8)
+		G.play("killmarker" if any_kill else "hitmarker", -4.0, randf_range(0.97, 1.03))
 	# Recoil.
 	var kick: float = stats.kick * (0.5 if view.ads > 0.5 else 1.0)
 	_pitch = clamp(_pitch + deg_to_rad(kick * 0.35), deg_to_rad(-85), deg_to_rad(85))
@@ -627,6 +629,7 @@ func _do_knife() -> void:
 		var res := best.take_damage(KNIFE_DMG, best.global_position + Vector3(0, 1.2, 0), fwd, false, "knife", "")
 		hit_confirmed.emit(res == "kill", false)
 		G.play("hit", 0.0)
+		G.play("killmarker" if res == "kill" else "hitmarker", -4.0)
 
 
 func _crosshair_on_zombie() -> bool:
