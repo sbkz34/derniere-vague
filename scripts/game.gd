@@ -112,6 +112,8 @@ var ui_test := false
 var view_test := false
 var window_test := false
 var dog_test := false
+var save_test := false
+var save_stage := 0
 var autostart := false
 var start_points := 500
 var quit_after_round := 0
@@ -134,6 +136,23 @@ var settings := {
 	"hud_margin": 0.0,
 }
 var best_round := 0
+
+# ------------------------------------------------------------------------------------------------
+# Progression (kept between games): experience, level, chosen map and starting weapon.
+# ------------------------------------------------------------------------------------------------
+const MAPS := {
+	"bunker": {"name": "Le Bunker", "desc": "Quatre salles, huit fenêtres, une forge."},
+}
+## Starting weapons and the level that unlocks each.
+const START_WEAPONS := [["p9", 1], ["k14", 3], ["vipere", 5], ["grele", 8], ["faucon", 12],
+		["taureau", 16], ["ouragan", 20]]
+var xp := 0
+var start_weapon := "p9"
+var map_id := "bunker"
+var last_xp_gain := 0
+var last_level_before := 1
+## Set by "Continuer": the saved game to restore when the level is ready.
+var pending_load: Dictionary = {}
 
 const SETTINGS_PATH := "user://settings.cfg"
 
@@ -163,6 +182,7 @@ func _ready() -> void:
 	view_test = args.has("--viewtest")
 	window_test = args.has("--windowtest")
 	dog_test = args.has("--dogtest")
+	save_test = args.has("--savetest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
@@ -390,6 +410,12 @@ func _load_settings() -> void:
 	for k in settings.keys():
 		settings[k] = cfg.get_value("settings", k, settings[k])
 	best_round = cfg.get_value("stats", "best_round", 0)
+	xp = cfg.get_value("profile", "xp", 0)
+	start_weapon = cfg.get_value("profile", "start_weapon", "p9")
+	map_id = cfg.get_value("profile", "map", "bunker")
+	if not is_unlocked(start_weapon) or not MAPS.has(map_id):
+		start_weapon = "p9"
+		map_id = "bunker"
 
 
 func save_settings() -> void:
@@ -397,7 +423,85 @@ func save_settings() -> void:
 	for k in settings.keys():
 		cfg.set_value("settings", k, settings[k])
 	cfg.set_value("stats", "best_round", best_round)
+	cfg.set_value("profile", "xp", xp)
+	cfg.set_value("profile", "start_weapon", start_weapon)
+	cfg.set_value("profile", "map", map_id)
 	cfg.save(SETTINGS_PATH)
+
+
+## Total experience needed to reach a level (level 2 at 500, then a little more each time).
+func xp_for_level(level: int) -> int:
+	return 250 * (level - 1) * level
+
+
+func level_for_xp(amount: int) -> int:
+	var lv := 1
+	while amount >= xp_for_level(lv + 1):
+		lv += 1
+	return lv
+
+
+func level() -> int:
+	return level_for_xp(xp)
+
+
+func unlock_level(weapon_id: String) -> int:
+	for pair in START_WEAPONS:
+		if pair[0] == weapon_id:
+			return pair[1]
+	return 999
+
+
+func is_unlocked(weapon_id: String) -> bool:
+	return level() >= unlock_level(weapon_id)
+
+
+## Experience for the game that just ended: kills, headshots and rounds survived.
+func award_game_xp() -> int:
+	var gain := kills * 10 + headshots * 5 + maxi(0, round_num - 1) * 75
+	last_level_before = level()
+	last_xp_gain = gain
+	xp += gain
+	save_settings()
+	return gain
+
+
+## Starting weapons unlocked between two levels (for the level-up message).
+func unlocks_between(from_level: int, to_level: int) -> Array[String]:
+	var out: Array[String] = []
+	for pair in START_WEAPONS:
+		if pair[1] > from_level and pair[1] <= to_level:
+			out.append(WEAPONS[pair[0]].name)
+	return out
+
+
+# ------------------------------------------------------------------------------------------------
+# Saved game (one slot): written between rounds and from the pause menu, removed at game over.
+# ------------------------------------------------------------------------------------------------
+const SAVE_PATH := "user://partie.json"
+
+
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_PATH)
+
+
+func read_save() -> Dictionary:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return {}
+	var data: Variant = JSON.parse_string(f.get_as_text())
+	return data if data is Dictionary else {}
+
+
+func write_save(data: Dictionary) -> void:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(data, "  "))
+
+
+func delete_save() -> void:
+	if has_save():
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 
 
 func apply_settings() -> void:

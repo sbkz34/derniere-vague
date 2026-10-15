@@ -7,6 +7,9 @@ signal play_pressed
 signal resume_pressed
 signal quit_to_title
 signal restart_pressed
+signal continue_pressed
+signal save_quit_pressed
+signal abandon_pressed
 
 var _root: Control
 var _title: Control
@@ -19,6 +22,13 @@ var _best: Label
 var _options_back_to: Control
 var _theme: Theme
 var _pad_info: Label
+var _lobby: Control
+var _lobby_level: Label
+var _lobby_xp: ProgressBar
+var _lobby_xp_text: Label
+var _lobby_maps: HBoxContainer
+var _lobby_weapons: GridContainer
+var _continue: Button
 
 
 func _ready() -> void:
@@ -33,6 +43,7 @@ func _ready() -> void:
 	_pause = _build_pause()
 	_options = _build_options()
 	_over = _build_over()
+	_lobby = _build_lobby()
 	hide_all()
 
 
@@ -134,7 +145,9 @@ func _build_title() -> Control:
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 24)
 	v.add_child(spacer)
-	var play := _button(v, "Jouer", func(): play_pressed.emit())
+	_continue = _button(v, "Continuer", func(): continue_pressed.emit())
+	_continue.name = "Continue"
+	var play := _button(v, "Nouvelle partie", show_lobby)
 	play.name = "Play"
 	_button(v, "Options", func(): _open_options(_title))
 	if not OS.has_feature("mobile"):
@@ -150,7 +163,8 @@ func _build_pause() -> Control:
 	var r := _button(v, "Reprendre", func(): resume_pressed.emit())
 	r.name = "Resume"
 	_button(v, "Options", func(): _open_options(_pause))
-	_button(v, "Abandonner", func(): quit_to_title.emit())
+	_button(v, "Sauvegarder et quitter", func(): save_quit_pressed.emit())
+	_button(v, "Abandonner la partie", func(): abandon_pressed.emit())
 	return s
 
 
@@ -166,6 +180,117 @@ func _build_over() -> Control:
 	again.name = "Again"
 	_button(v, "Menu principal", func(): quit_to_title.emit())
 	return s
+
+
+## Lobby: player level, map and starting weapon (unlocked by level), then start.
+func _build_lobby() -> Control:
+	var s := _screen(0.6)
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	s.add_child(cc)
+	var panel := PanelContainer.new()
+	cc.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 12)
+	v.custom_minimum_size = Vector2(900, 0)
+	panel.add_child(v)
+	_big_label(v, "PRÉPARATION", 52, Color(0.9, 0.9, 0.88))
+	var lv := HBoxContainer.new()
+	lv.add_theme_constant_override("separation", 18)
+	v.add_child(lv)
+	_lobby_level = Label.new()
+	_lobby_level.add_theme_font_size_override("font_size", 34)
+	_lobby_level.add_theme_color_override("font_color", Color(1, 0.85, 0.35))
+	lv.add_child(_lobby_level)
+	_lobby_xp = ProgressBar.new()
+	_lobby_xp.custom_minimum_size = Vector2(420, 26)
+	_lobby_xp.show_percentage = false
+	_lobby_xp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.85, 0.15, 0.08)
+	fill.set_corner_radius_all(4)
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(0.15, 0.1, 0.1)
+	back.set_corner_radius_all(4)
+	_lobby_xp.add_theme_stylebox_override("fill", fill)
+	_lobby_xp.add_theme_stylebox_override("background", back)
+	lv.add_child(_lobby_xp)
+	_lobby_xp_text = Label.new()
+	_lobby_xp_text.add_theme_font_size_override("font_size", 22)
+	lv.add_child(_lobby_xp_text)
+	var map_title := Label.new()
+	map_title.text = "Carte"
+	map_title.add_theme_color_override("font_color", Color(0.85, 0.3, 0.25))
+	v.add_child(map_title)
+	_lobby_maps = HBoxContainer.new()
+	_lobby_maps.add_theme_constant_override("separation", 12)
+	v.add_child(_lobby_maps)
+	var w_title := Label.new()
+	w_title.text = "Arme de départ"
+	w_title.add_theme_color_override("font_color", Color(0.85, 0.3, 0.25))
+	v.add_child(w_title)
+	_lobby_weapons = GridContainer.new()
+	_lobby_weapons.columns = 2
+	_lobby_weapons.add_theme_constant_override("h_separation", 12)
+	_lobby_weapons.add_theme_constant_override("v_separation", 8)
+	v.add_child(_lobby_weapons)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 20)
+	v.add_child(row)
+	var go := _button(row, "Lancer la partie", func(): play_pressed.emit())
+	go.name = "Go"
+	_button(row, "Retour", show_title)
+	return s
+
+
+func _small_button(parent: Control, text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(440, 50)
+	b.add_theme_font_size_override("font_size", 24)
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	return b
+
+
+func show_lobby() -> void:
+	hide_all()
+	var lv := G.level()
+	var lo := G.xp_for_level(lv)
+	var hi := G.xp_for_level(lv + 1)
+	_lobby_level.text = "Niveau %d" % lv
+	_lobby_xp.min_value = lo
+	_lobby_xp.max_value = hi
+	_lobby_xp.value = G.xp
+	_lobby_xp_text.text = "%d / %d XP" % [G.xp, hi]
+	for c in _lobby_maps.get_children():
+		c.queue_free()
+	for c in _lobby_weapons.get_children():
+		c.queue_free()
+	var map_group := ButtonGroup.new()
+	for id in G.MAPS:
+		var b := _small_button(_lobby_maps, G.MAPS[id].name, func(): G.map_id = id)
+		b.toggle_mode = true
+		b.button_group = map_group
+		b.button_pressed = id == G.map_id
+		b.tooltip_text = G.MAPS[id].desc
+	var soon := _small_button(_lobby_maps, "Nouvelle carte — bientôt", func(): pass)
+	soon.disabled = true
+	var weapon_group := ButtonGroup.new()
+	for pair in G.START_WEAPONS:
+		var id: String = pair[0]
+		var need: int = pair[1]
+		var name: String = G.WEAPONS[id].name
+		var unlocked := lv >= need
+		var b := _small_button(_lobby_weapons, name if unlocked else "%s  (niveau %d)" % [name, need],
+			func(): G.start_weapon = id)
+		b.toggle_mode = true
+		b.button_group = weapon_group
+		b.disabled = not unlocked
+		b.button_pressed = id == G.start_weapon
+	_lobby.visible = true
+	_focus(_lobby.find_child("Go", true, false))
 
 
 func _build_options() -> Control:
@@ -258,15 +383,22 @@ func _choice(parent: Control, text: String, key: String, values: Array) -> void:
 
 
 func hide_all() -> void:
-	for c in [_title, _pause, _options, _over]:
+	for c in [_title, _pause, _options, _over, _lobby]:
 		c.visible = false
 
 
 func show_title() -> void:
 	hide_all()
-	_best.text = ("Record : manche %d" % G.best_round) if G.best_round > 0 else ""
+	var lines: Array[String] = ["Niveau %d" % G.level()]
+	if G.best_round > 0:
+		lines.append("record : manche %d" % G.best_round)
+	_best.text = " — ".join(lines)
+	_continue.visible = G.has_save()
+	if _continue.visible:
+		var d := G.read_save()
+		_continue.text = "Continuer — manche %d" % int(d.get("round", 1))
 	_title.visible = true
-	_focus(_title.find_child("Play", true, false))
+	_focus(_continue if _continue.visible else _title.find_child("Play", true, false))
 
 
 func show_pause() -> void:
@@ -279,6 +411,12 @@ func show_game_over(rounds: int, best: bool) -> void:
 	hide_all()
 	_over_title.text = "VOUS AVEZ SURVÉCU %d MANCHE%s" % [rounds, "S" if rounds > 1 else ""]
 	var lines := "Zombies éliminés : %d\nTirs à la tête : %d\nPoints gagnés : %d" % [G.kills, G.headshots, G.total_points]
+	lines += "\n\n+%d XP" % G.last_xp_gain
+	if G.level() > G.last_level_before:
+		lines += "  —  NIVEAU %d !" % G.level()
+		var unlocked := G.unlocks_between(G.last_level_before, G.level())
+		if not unlocked.is_empty():
+			lines += "\nNouvelle arme de départ : " + ", ".join(unlocked)
 	if best:
 		lines += "\n\nNOUVEAU RECORD !"
 	_over_stats.text = lines
@@ -315,9 +453,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if (event is InputEventJoypadButton and event.pressed) or (event is InputEventJoypadMotion and abs(event.axis_value) > 0.5):
 		if get_viewport().gui_get_focus_owner() == null:
-			for screen in [_title, _pause, _options, _over]:
+			for screen in [_title, _pause, _options, _over, _lobby]:
 				if screen.visible:
-					for name in ["Play", "Resume", "Again", "Back"]:
+					for name in ["Continue", "Play", "Resume", "Again", "Back", "Go"]:
 						var b: Node = screen.find_child(name, true, false)
 						if b:
 							(b as Control).grab_focus()
@@ -326,7 +464,7 @@ func _input(event: InputEvent) -> void:
 
 
 func is_open() -> bool:
-	return _title.visible or _pause.visible or _options.visible or _over.visible
+	return _title.visible or _pause.visible or _options.visible or _over.visible or _lobby.visible
 
 
 func options_open() -> bool:

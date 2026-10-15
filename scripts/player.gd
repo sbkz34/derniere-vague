@@ -38,6 +38,7 @@ var downed := false
 var dead := false
 var targetable := true
 var _regen_wait := 0.0
+var _invuln := 0.0   # short grace after a hit, so several bites at once cannot stack
 
 var _yaw := 0.0
 var _pitch := 0.0
@@ -242,8 +243,9 @@ func reload_time() -> float:
 # Health
 # ------------------------------------------------------------------------------------------------
 func take_hit(amount: float, from: Vector3) -> void:
-	if downed or dead or G.god_mode:
+	if downed or dead or G.god_mode or _invuln > 0.0:
 		return
+	_invuln = 0.5
 	hp -= amount
 	_regen_wait = 2.8
 	_shake = 0.25
@@ -404,6 +406,7 @@ func _fire_input() -> bool:
 
 func _update_timers(delta: float) -> void:
 	_fire_cd -= delta
+	_invuln = maxf(0.0, _invuln - delta)
 	if _swap_t > 0.0:
 		_swap_t -= delta
 	if _knife_t > 0.0:

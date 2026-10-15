@@ -73,6 +73,9 @@ jobs:
           # Zombies outside a window must be shootable from inside.
           timeout 60 "$HOME/godot" --headless --path . -- --windowtest 2>&1 | grep windowtest | tee window.log
           grep -q "\[windowtest\] OK" window.log
+          # Save, reload from the save, compare.
+          timeout 120 "$HOME/godot" --headless --path . -- --savetest 2>&1 | grep savetest | tee save.log
+          grep -q "\[savetest\] OK" save.log
 
       - name: Publish the release
         env:

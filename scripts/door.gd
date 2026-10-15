@@ -85,6 +85,17 @@ func get_hint(_player: Node) -> String:
 	return "%s ouvrir le passage %s" % [use_text(), price_text(price)]
 
 
+## Opens without paying (restoring a saved game).
+func open_free() -> void:
+	if not enabled:
+		return
+	enabled = false
+	monitorable = false
+	panel.visible = false
+	blocker.queue_free()
+	opened.emit(self)
+
+
 func interact(_player: Node) -> void:
 	if not enabled or not G.spend(price):
 		return

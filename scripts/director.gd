@@ -11,7 +11,6 @@ signal dog_round_started(n: int)
 const MAX_ALIVE := 24
 const DROP_CHANCE := 0.03
 const MAX_DROPS_PER_ROUND := 4
-const MAX_DOGS_ALIVE := 8
 
 var level: Level
 var player: Player
@@ -29,6 +28,7 @@ var _kills_since_drop := 0
 var dog_round := false
 var next_dog_round := 0
 var _last_kill_pos := Vector3.ZERO
+var _dog_rounds_done := 0
 
 
 func start() -> void:
@@ -39,6 +39,16 @@ func start() -> void:
 	next_dog_round = randi_range(5, 6)
 
 
+## Resumes a saved game: the next round to play is `round`.
+func start_at(next_round: int, p_next_dog: int, p_dogs_done: int) -> void:
+	G.round_num = maxi(0, next_round - 1)
+	intermission = 5.0
+	in_round = false
+	dog_round = false
+	next_dog_round = maxi(p_next_dog, next_round)
+	_dog_rounds_done = p_dogs_done
+
+
 func _process(delta: float) -> void:
 	if not G.playing or player == null or player.dead:
 		return
@@ -47,11 +57,11 @@ func _process(delta: float) -> void:
 		if intermission <= 0.0:
 			_begin_round()
 		return
-	if to_spawn > 0 and alive < (MAX_DOGS_ALIVE if dog_round else MAX_ALIVE):
+	if to_spawn > 0 and alive < (_max_dogs() if dog_round else MAX_ALIVE):
 		_spawn_t -= delta
 		if _spawn_t <= 0.0:
 			if dog_round:
-				_spawn_t = randf_range(0.8, 1.8)
+				_spawn_t = randf_range(2.0, 3.5)
 				_spawn_dog()
 			else:
 				_spawn_t = G.spawn_delay(G.round_num) * randf_range(0.7, 1.3)
@@ -68,7 +78,7 @@ func _begin_round() -> void:
 	dog_round = G.round_num == next_dog_round
 	if dog_round:
 		next_dog_round = G.round_num + randi_range(4, 6)
-		to_spawn = clampi(6 + G.round_num / 2, 6, 24)
+		to_spawn = clampi(4 + G.round_num / 2, 6, 20)
 		_spawn_t = 4.0
 		level.set_storm(true)
 		G.play("howl", 0.0)
@@ -89,10 +99,16 @@ func _end_round() -> void:
 	if dog_round:
 		# The last dog leaves a full ammo refill behind, and the storm clears.
 		dog_round = false
+		_dog_rounds_done += 1
 		level.set_storm(false)
 		_drop(_last_kill_pos, "ammo")
 	G.play("round_end", -2.0)
 	round_ended.emit(G.round_num)
+
+
+## Dogs at the same time: 3 on the first dog round, one more each time, at most 6.
+func _max_dogs() -> int:
+	return mini(3 + _dog_rounds_done, 6)
 
 
 func _kind_for_round(r: int) -> String:

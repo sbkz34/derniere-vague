@@ -41,9 +41,10 @@ func setup_dog(p_director: Node, p_player: Player, pos: Vector3, p_hp: float) ->
 	speed = randf_range(5.6, 6.4)
 	attack_range = 1.25
 	hit_range = 1.7
-	damage = 40.0
-	attack_windup = 0.22
-	attack_length = 0.75
+	# Three bites to go down without Cuirasse, one bite every 1.5 s at most.
+	damage = 34.0
+	attack_windup = 0.3
+	attack_length = 1.5
 
 
 func _make_body() -> void:
