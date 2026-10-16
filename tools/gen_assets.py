@@ -511,3 +511,35 @@ write("brute_smash.wav", place(d, [(0.0, _thud(0.6, 220, 0.12), 2.5), (0.0, lowp
 # Crawler: a wet scraping drag.
 d = 0.7
 write("crawl.wav", lowpass(white(d), 900) * (0.5 + 0.5 * np.sin(2 * np.pi * 3.0 * t(d))) * np.clip((d - t(d)) / 0.3, 0, 1) * 0.8)
+
+
+# ----------------------------------------------------------------------------------------------
+# Weapon camouflages (unlocked by kills) and the challenge jingle.
+# ----------------------------------------------------------------------------------------------
+def blobs(colors, sigma, seed_shift=0):
+    """Layered camouflage blobs: each colour wins where its own smooth noise is highest."""
+    fields = [noise(sigma) + 0.15 * noise(sigma / 3) for _ in colors]
+    idx = np.argmax(np.stack(fields), axis=0)
+    out = np.array(colors)[idx]
+    return out
+
+
+save("camo_treillis.png", blobs([(0.2, 0.24, 0.13), (0.34, 0.3, 0.18), (0.11, 0.1, 0.08), (0.42, 0.41, 0.27)], 9))
+save("camo_desert.png", blobs([(0.78, 0.68, 0.5), (0.63, 0.51, 0.35), (0.52, 0.4, 0.26), (0.72, 0.6, 0.42)], 12))
+# Digital: blocky pixels from a small grid.
+small = blobs([(0.08, 0.16, 0.38), (0.16, 0.32, 0.62), (0.3, 0.5, 0.82), (0.06, 0.08, 0.14)], 2.5)
+small = small[::8, ::8]
+save("camo_cobalt.png", np.kron(small, np.ones((8, 8, 1))))
+# Ember: black rock with glowing cracks (the bright parts glow in game).
+ridge = 1 - np.abs(fbm((2, 4, 8)) - 0.5) * 2
+cracks = np.clip((ridge - 0.86) / 0.14, 0, 1) ** 1.5
+base = colorize(fbm() * 0.4, (0.03, 0.02, 0.02), (0.14, 0.1, 0.08))
+save("camo_braise.png", np.clip(base + cracks[..., None] * np.array([1.0, 0.45, 0.08]), 0, 1))
+# Obsidian: glassy black with violet veins.
+ridge = 1 - np.abs(fbm((3, 6, 12)) - 0.5) * 2
+veins = np.clip((ridge - 0.9) / 0.1, 0, 1)
+base = colorize(fbm((1, 2, 4)) * 0.5, (0.02, 0.015, 0.03), (0.1, 0.07, 0.14))
+save("camo_obsidienne.png", np.clip(base + veins[..., None] * np.array([0.65, 0.2, 1.0]), 0, 1))
+
+# Challenge complete: a short bright rising arpeggio.
+write("challenge.wav", tone_seq([659.3, 830.6, 987.8, 1318.5], 0.09, bell, 0.25, gap=0.0, tail=0.8) * 0.8)

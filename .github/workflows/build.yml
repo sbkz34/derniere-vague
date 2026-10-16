@@ -82,6 +82,9 @@ jobs:
           # Colosse, crawlers and the electric trap.
           timeout 120 "$HOME/godot" --headless --path . -- --specialtest 2>&1 | grep specialtest | tee special.log
           grep -q "\[specialtest\] OK" special.log
+          # Challenges, camouflages and gamepad remapping.
+          timeout 120 "$HOME/godot" --headless --path . -- --progresstest 2>&1 | grep progresstest | tee progress.log
+          grep -q "\[progresstest\] OK" progress.log
           # Switching weapons cancels a reload.
           timeout 60 "$HOME/godot" --headless --path . -- --swaptest 2>&1 | grep swaptest | tee swap.log
           grep -q "\[swaptest\] OK" swap.log

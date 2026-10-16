@@ -120,6 +120,7 @@ var save_test := false
 var swap_test := false
 var gadget_test := false
 var special_test := false
+var progress_test := false
 var save_stage := 0
 var autostart := false
 var start_points := 500
@@ -157,6 +158,8 @@ var xp := 0
 var start_weapon := "p9"
 var map_id := "bunker"
 var last_xp_gain := 0
+## Experience from challenges completed during the current game (shown at game over).
+var session_challenge_xp := 0
 var last_level_before := 1
 ## Set by "Continuer": the saved game to restore when the level is ready.
 var pending_load: Dictionary = {}
@@ -173,6 +176,7 @@ var _next_player := 0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_input()
+	apply_pad_map()
 	_load_settings()
 	apply_settings()
 	for i in 12:
@@ -193,6 +197,7 @@ func _ready() -> void:
 	swap_test = args.has("--swaptest")
 	gadget_test = args.has("--gadgettest")
 	special_test = args.has("--specialtest")
+	progress_test = args.has("--progresstest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
@@ -212,6 +217,9 @@ func reset_session() -> void:
 	points = start_points
 	round_num = 0
 	power_on = false
+	session_challenge_xp = 0
+	# Level-ups are counted from here (challenges can raise the level during the game).
+	last_level_before = level()
 	kills = 0
 	headshots = 0
 	total_points = 0
@@ -410,8 +418,10 @@ func _input(event: InputEvent) -> void:
 func button_name(action: String) -> String:
 	match input_mode:
 		"pad":
-			return {"use": "X", "interact": "X", "reload": "X", "swap": "Y", "knife": "B",
-				"jump": "A", "fire": "RT", "ads": "LT", "grenade": "RB", "decoy": "LB"}.get(action, action)
+			var a := "use" if action == "interact" or action == "reload" else action
+			if pad_map.has(a):
+				return pad_binding_name(pad_map[a])
+			return action
 		"touch":
 			return {"use": "ACTION", "interact": "ACTION", "reload": "RECHARGER"}.get(action, action)
 		_:
@@ -433,6 +443,15 @@ func _load_settings() -> void:
 	xp = cfg.get_value("profile", "xp", 0)
 	start_weapon = cfg.get_value("profile", "start_weapon", "p9")
 	map_id = cfg.get_value("profile", "map", "bunker")
+	stats = cfg.get_value("progress", "stats", {})
+	weapon_kills = cfg.get_value("progress", "weapon_kills", {})
+	challenges_done = cfg.get_value("progress", "challenges", {})
+	camo_choice = cfg.get_value("progress", "camos", {})
+	var pm: Dictionary = cfg.get_value("pad", "map", {})
+	for k in pm:
+		if PAD_DEFAULT.has(k):
+			pad_map[k] = str(pm[k])
+	apply_pad_map()
 	if not is_unlocked(start_weapon) or not MAPS.has(map_id):
 		start_weapon = "p9"
 		map_id = "bunker"
@@ -446,6 +465,11 @@ func save_settings() -> void:
 	cfg.set_value("profile", "xp", xp)
 	cfg.set_value("profile", "start_weapon", start_weapon)
 	cfg.set_value("profile", "map", map_id)
+	cfg.set_value("progress", "stats", stats)
+	cfg.set_value("progress", "weapon_kills", weapon_kills)
+	cfg.set_value("progress", "challenges", challenges_done)
+	cfg.set_value("progress", "camos", camo_choice)
+	cfg.set_value("pad", "map", pad_map)
 	cfg.save(SETTINGS_PATH)
 
 
@@ -479,7 +503,6 @@ func is_unlocked(weapon_id: String) -> bool:
 ## Experience for the game that just ended: kills, headshots and rounds survived.
 func award_game_xp() -> int:
 	var gain := kills * 10 + headshots * 5 + maxi(0, round_num - 1) * 75
-	last_level_before = level()
 	last_xp_gain = gain
 	xp += gain
 	save_settings()
@@ -493,6 +516,231 @@ func unlocks_between(from_level: int, to_level: int) -> Array[String]:
 		if pair[1] > from_level and pair[1] <= to_level:
 			out.append(WEAPONS[pair[0]].name)
 	return out
+
+
+# ------------------------------------------------------------------------------------------------
+# Challenges and camouflages (kept between games)
+# ------------------------------------------------------------------------------------------------
+signal challenge_done(text: String)
+signal camo_unlocked(text: String)
+
+## Each challenge has three tiers; each tier gives its experience once.
+const CHALLENGES := [
+	{"name": "Tueur", "stat": "kills", "desc": "Éliminer %d zombies", "goals": [100, 500, 2000], "xp": [300, 1000, 3000]},
+	{"name": "Tireur d'élite", "stat": "headshots", "desc": "%d tirs à la tête mortels", "goals": [50, 250, 1000], "xp": [300, 1000, 3000]},
+	{"name": "Survivant", "stat": "round", "desc": "Atteindre la manche %d", "goals": [10, 20, 30], "xp": [500, 1500, 4000]},
+	{"name": "Dresseur", "stat": "dog_kills", "desc": "Abattre %d molosses", "goals": [20, 100, 300], "xp": [300, 1000, 2500]},
+	{"name": "Tombeur de Colosse", "stat": "brute_kills", "desc": "Abattre %d Colosse", "goals": [1, 5, 15], "xp": [800, 2000, 5000]},
+	{"name": "Artificier", "stat": "grenade_kills", "desc": "%d éliminations à l'explosif", "goals": [25, 100, 400], "xp": [300, 1000, 2500]},
+	{"name": "Électricien", "stat": "trap_kills", "desc": "%d éliminations avec le piège", "goals": [25, 100, 300], "xp": [300, 800, 2000]},
+	{"name": "Boucher", "stat": "knife_kills", "desc": "%d éliminations au couteau", "goals": [25, 100, 400], "xp": [300, 1000, 2500]},
+	{"name": "Forgeron", "stat": "upgrades", "desc": "Améliorer %d fois une arme à la Forge", "goals": [3, 15, 50], "xp": [300, 1000, 2500]},
+	{"name": "Arme ultime", "stat": "ultimes", "desc": "Porter %d armes au niveau Ultime", "goals": [1, 5, 20], "xp": [500, 1500, 4000]},
+	{"name": "Sans jambes", "stat": "crawler_kills", "desc": "Achever %d rampants", "goals": [10, 50, 200], "xp": [200, 700, 2000]},
+]
+const TIER_ROMAN := ["I", "II", "III"]
+## Camouflages: id, name, kills needed with that weapon.
+const CAMOS := [["", "Standard", 0], ["treillis", "Treillis", 50], ["desert", "Désert", 150],
+		["cobalt", "Cobalt", 300], ["braise", "Braise", 600], ["obsidienne", "Obsidienne", 1000]]
+
+var stats := {}
+var weapon_kills := {}
+var challenges_done := {}
+var camo_choice := {}
+
+
+func pstat(key: String) -> int:
+	return int(stats.get(key, 0))
+
+
+func stat_add(key: String, n := 1) -> void:
+	stats[key] = pstat(key) + n
+	_check_challenges(key)
+
+
+func stat_max(key: String, v: int) -> void:
+	if v > pstat(key):
+		stats[key] = v
+		_check_challenges(key)
+
+
+## Current tier (0-2) of a challenge, or 3 when all are done.
+func challenge_tier(i: int) -> int:
+	for t in 3:
+		if not challenges_done.has("%d:%d" % [i, t]):
+			return t
+	return 3
+
+
+func _check_challenges(key: String) -> void:
+	for i in CHALLENGES.size():
+		var c: Dictionary = CHALLENGES[i]
+		if c.stat != key:
+			continue
+		var t := challenge_tier(i)
+		while t < 3 and pstat(key) >= int(c.goals[t]):
+			challenges_done["%d:%d" % [i, t]] = true
+			var gain: int = c.xp[t]
+			xp += gain
+			session_challenge_xp += gain
+			play("challenge", -2.0)
+			challenge_done.emit("DÉFI RÉUSSI : %s %s  (+%d XP)" % [c.name, TIER_ROMAN[t], gain])
+			save_settings()
+			t += 1
+
+
+## Called for every kill: feeds the challenges and the camouflages.
+func record_kill(z: Node, how: String, weapon_id: String, head: bool) -> void:
+	stat_add("kills")
+	if head:
+		stat_add("headshots")
+	if z is Dog:
+		stat_add("dog_kills")
+	elif z is Brute:
+		stat_add("brute_kills")
+	elif z is Zombie and (z as Zombie).crawler:
+		stat_add("crawler_kills")
+	match how:
+		"grenade":
+			stat_add("grenade_kills")
+		"trap":
+			stat_add("trap_kills")
+		"knife":
+			stat_add("knife_kills")
+		"gun":
+			if weapon_id != "" and WEAPONS.has(weapon_id):
+				var before := int(weapon_kills.get(weapon_id, 0))
+				weapon_kills[weapon_id] = before + 1
+				for c in CAMOS:
+					if int(c[2]) > 0 and before < int(c[2]) and before + 1 >= int(c[2]):
+						# A new camouflage goes straight on the weapon.
+						camo_choice[weapon_id] = c[0]
+						play("challenge", -4.0, 1.2)
+						camo_unlocked.emit("CAMOUFLAGE %s : %s" % [str(c[1]).to_upper(), WEAPONS[weapon_id].name])
+						save_settings()
+
+
+func camo_need(camo: String) -> int:
+	for c in CAMOS:
+		if c[0] == camo:
+			return int(c[2])
+	return 999999
+
+
+func camo_name(camo: String) -> String:
+	for c in CAMOS:
+		if c[0] == camo:
+			return c[1]
+	return ""
+
+
+func is_camo_unlocked(weapon_id: String, camo: String) -> bool:
+	return int(weapon_kills.get(weapon_id, 0)) >= camo_need(camo)
+
+
+func camo_for(weapon_id: String) -> String:
+	var c: String = camo_choice.get(weapon_id, "")
+	return c if is_camo_unlocked(weapon_id, c) else ""
+
+
+## The camouflage on the gun body; `dark` is a shaded copy for the darker parts.
+func _camo_mat(camo: String, tier: int, dark: bool) -> StandardMaterial3D:
+	var key := "camo_%s_%d_%s" % [camo, tier, dark]
+	if _gun_mats.has(key):
+		return _gun_mats[key]
+	var m := StandardMaterial3D.new()
+	var tex: Texture2D = load("res://assets/tex/camo_%s.png" % camo)
+	m.albedo_texture = tex
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(2.5, 2.5, 2.5)
+	m.roughness = 0.5
+	m.metallic = 0.25
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if camo == "braise" or camo == "obsidienne":
+		m.emission_enabled = true
+		m.emission_texture = tex
+		m.emission = Color(1, 1, 1)
+		m.emission_energy_multiplier = 1.6
+	if tier > 0:
+		# Upgraded: the camouflage takes the tier's colour and glow.
+		var prefix: String = ["", "up", "gold", "red"][clampi(tier, 0, MAX_TIER)]
+		var tm: StandardMaterial3D = gun_mats()[prefix + "_metal"]
+		m.albedo_color = (tm.albedo_color * 1.8).clamp(Color(0, 0, 0), Color(1, 1, 1))
+		if not m.emission_enabled:
+			m.emission_enabled = true
+			m.emission = tm.emission
+			m.emission_energy_multiplier = tm.emission_energy_multiplier
+	if dark:
+		m.albedo_color = m.albedo_color * Color(0.55, 0.55, 0.55)
+		m.emission_energy_multiplier *= 0.5
+	_gun_mats[key] = m
+	return m
+
+
+# ------------------------------------------------------------------------------------------------
+# Gamepad buttons (remappable in the options). A binding is "b<button>" or "a<trigger axis>".
+# ------------------------------------------------------------------------------------------------
+const PAD_ACTIONS := [["fire", "Tirer"], ["ads", "Viser"], ["use", "Action / recharger"],
+		["swap", "Changer d'arme"], ["knife", "Couteau"], ["grenade", "Grenade"], ["decoy", "Leurre"],
+		["jump", "Sauter"], ["sprint", "Sprinter"]]
+const PAD_DEFAULT := {"fire": "a5", "ads": "a4", "use": "b2", "swap": "b3", "knife": "b1",
+		"grenade": "b10", "decoy": "b9", "jump": "b0", "sprint": "b7"}
+const PAD_NAMES := {"b0": "A", "b1": "B", "b2": "X", "b3": "Y", "b4": "Select", "b5": "Home", "b6": "Start",
+		"b7": "L3", "b8": "R3", "b9": "LB", "b10": "RB", "b11": "Haut", "b12": "Bas", "b13": "Gauche",
+		"b14": "Droite", "b15": "LT", "b16": "RT", "a4": "LT", "a5": "RT"}
+var pad_map := PAD_DEFAULT.duplicate()
+
+
+func pad_binding_name(binding: String) -> String:
+	return PAD_NAMES.get(binding, "Bouton %s" % binding.substr(1))
+
+
+## Puts the gamepad buttons of the remappable actions back from pad_map.
+func apply_pad_map() -> void:
+	for pair in PAD_ACTIONS:
+		var action: String = pair[0]
+		for e in InputMap.action_get_events(action):
+			if e is InputEventJoypadButton or e is InputEventJoypadMotion:
+				InputMap.action_erase_event(action, e)
+	var used := {}
+	for pair in PAD_ACTIONS:
+		used[pad_map.get(pair[0], PAD_DEFAULT[pair[0]])] = true
+	for pair in PAD_ACTIONS:
+		var action: String = pair[0]
+		var b: String = pad_map.get(action, PAD_DEFAULT[action])
+		_bind(action, b)
+		# Triggers that some controllers report as buttons on Android (15 = L2, 16 = R2).
+		if b == "a5" and not used.has("b16"):
+			_bind(action, "b16")
+		elif b == "a4" and not used.has("b15"):
+			_bind(action, "b15")
+		elif b == "b1" and action == "knife" and not used.has("b8"):
+			_bind(action, "b8")
+
+
+func _bind(action: String, b: String) -> void:
+	var n := int(b.substr(1))
+	if b.begins_with("a"):
+		_axis(action, n as JoyAxis, 1.0)
+	else:
+		_btn(action, n as JoyButton)
+
+
+## Gives `action` the binding; an action that had it takes the old one instead.
+func set_pad_binding(action: String, binding: String) -> void:
+	var old: String = pad_map.get(action, PAD_DEFAULT[action])
+	for other in pad_map.keys():
+		if other != action and pad_map[other] == binding:
+			pad_map[other] = old
+	pad_map[action] = binding
+	apply_pad_map()
+	save_settings()
+
+
+func reset_pad_map() -> void:
+	pad_map = PAD_DEFAULT.duplicate()
+	apply_pad_map()
+	save_settings()
 
 
 # ------------------------------------------------------------------------------------------------
@@ -644,7 +892,7 @@ func _mat(albedo: Color, metallic: float, rough: float, emission: Color, energy:
 	return m
 
 
-func gun_mats_for(tier: int) -> Dictionary:
+func gun_mats_for(tier: int, camo := "") -> Dictionary:
 	var m := gun_mats().duplicate()
 	var prefix: String = ["", "up", "gold", "red"][clampi(tier, 0, MAX_TIER)]
 	if prefix != "":
@@ -652,6 +900,10 @@ func gun_mats_for(tier: int) -> Dictionary:
 		m["dark"] = m[prefix + "_dark"]
 		m["glow"] = m[prefix + "_glow"]
 		m["wood"] = m[prefix + "_dark"]
+	if camo != "":
+		m["metal"] = _camo_mat(camo, tier, false)
+		m["dark"] = _camo_mat(camo, tier, true)
+		m["wood"] = m["metal"] if tier == 0 else m["dark"]
 	return m
 
 

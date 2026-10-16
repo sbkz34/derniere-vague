@@ -38,6 +38,18 @@ var _map_name: Label
 var _map_desc: Label
 ## The level behind the menus (for the map plan), set by main.
 var level: Node
+var _challenges: Control
+var _challenge_list: VBoxContainer
+var _armory: Control
+var _armory_grid: GridContainer
+var _armory_preview: LobbyVisuals.WeaponPreview
+var _armory_name: Label
+var _armory_kills: Label
+var _armory_camos: HBoxContainer
+var _armory_weapon := "p9"
+var _pad_buttons := {}
+var _capturing := ""
+var _capture_t := 0.0
 var _continue: Button
 
 
@@ -54,6 +66,8 @@ func _ready() -> void:
 	_options = _build_options()
 	_over = _build_over()
 	_lobby = _build_lobby()
+	_challenges = _build_challenges()
+	_armory = _build_armory()
 	hide_all()
 
 
@@ -159,6 +173,8 @@ func _build_title() -> Control:
 	_continue.name = "Continue"
 	var play := _button(v, "Nouvelle partie", show_lobby)
 	play.name = "Play"
+	_button(v, "Défis", show_challenges)
+	_button(v, "Armurerie", show_armory)
 	_button(v, "Options", func(): _open_options(_title))
 	if not OS.has_feature("mobile"):
 		_button(v, "Quitter", func(): get_tree().quit())
@@ -438,6 +454,20 @@ func _build_options() -> Control:
 	_check(v, "Afficher les images par seconde", "show_fps")
 	_choice(v, "Images par seconde max.", "max_fps", [[60, "60"], [90, "90"], [120, "120"]])
 	_choice(v, "Résolution 3D", "render_scale", [[1.0, "100 %"], [0.85, "85 %"], [0.75, "75 %"], [0.6, "60 %"], [0.5, "50 %"]])
+	_section(v, "BOUTONS DE LA MANETTE")
+	for pair in G.PAD_ACTIONS:
+		var action: String = pair[0]
+		var h := _row(v, pair[1])
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(260, 44)
+		b.pressed.connect(func(): _start_capture(action))
+		h.add_child(b)
+		_pad_buttons[action] = b
+	var reset := _small_button(v, "Boutons par défaut", func():
+		G.reset_pad_map()
+		_refresh_pad_buttons())
+	reset.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_refresh_pad_buttons()
 	_pad_info = Label.new()
 	_pad_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pad_info.add_theme_font_size_override("font_size", 20)
@@ -500,8 +530,9 @@ func _choice(parent: Control, text: String, key: String, values: Array) -> void:
 
 
 func hide_all() -> void:
-	for c in [_title, _pause, _options, _over, _lobby]:
-		c.visible = false
+	for c in [_title, _pause, _options, _over, _lobby, _challenges, _armory]:
+		if c:
+			c.visible = false
 
 
 func show_title() -> void:
@@ -529,6 +560,8 @@ func show_game_over(rounds: int, best: bool) -> void:
 	_over_title.text = "VOUS AVEZ SURVÉCU %d MANCHE%s" % [rounds, "S" if rounds > 1 else ""]
 	var lines := "Zombies éliminés : %d\nTirs à la tête : %d\nPoints gagnés : %d" % [G.kills, G.headshots, G.total_points]
 	lines += "\n\n+%d XP" % G.last_xp_gain
+	if G.session_challenge_xp > 0:
+		lines += "  (+%d XP de défis)" % G.session_challenge_xp
 	if G.level() > G.last_level_before:
 		lines += "  —  NIVEAU %d !" % G.level()
 		var unlocked := G.unlocks_between(G.last_level_before, G.level())
@@ -565,12 +598,15 @@ func _focus(c: Node) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _capturing != "":
+		_capture_input(event)
+		return
 	# First gamepad press in a menu: give focus to its first button.
 	if not is_open():
 		return
 	if (event is InputEventJoypadButton and event.pressed) or (event is InputEventJoypadMotion and abs(event.axis_value) > 0.5):
 		if get_viewport().gui_get_focus_owner() == null:
-			for screen in [_title, _pause, _options, _over, _lobby]:
+			for screen in [_title, _pause, _options, _over, _lobby, _challenges, _armory]:
 				if screen.visible:
 					for name in ["Continue", "Play", "Resume", "Again", "Back", "Go"]:
 						var b: Node = screen.find_child(name, true, false)
@@ -581,14 +617,20 @@ func _input(event: InputEvent) -> void:
 
 
 func is_open() -> bool:
-	return _title.visible or _pause.visible or _options.visible or _over.visible or _lobby.visible
+	return _title.visible or _pause.visible or _options.visible or _over.visible or _lobby.visible \
+			or _challenges.visible or _armory.visible
 
 
 func options_open() -> bool:
 	return _options.visible
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _capturing != "":
+		_capture_t -= delta
+		if _capture_t <= 0.0:
+			_capturing = ""
+			_refresh_pad_buttons()
 	if _options.visible and _pad_info:
 		var pads := Input.get_connected_joypads()
 		var names: Array[String] = []
@@ -598,3 +640,234 @@ func _process(_delta: float) -> void:
 		if G.last_pad_input != "":
 			t += "\nDernière touche : " + G.last_pad_input
 		_pad_info.text = t
+
+
+
+# ------------------------------------------------------------------------------------------------
+# Gamepad remapping
+# ------------------------------------------------------------------------------------------------
+func _refresh_pad_buttons() -> void:
+	for action in _pad_buttons:
+		var b: Button = _pad_buttons[action]
+		b.text = G.pad_binding_name(G.pad_map.get(action, G.PAD_DEFAULT[action]))
+
+
+func _start_capture(action: String) -> void:
+	_capturing = action
+	_capture_t = 6.0
+	_refresh_pad_buttons()
+	(_pad_buttons[action] as Button).text = "Appuyez sur un bouton…"
+
+
+## The next gamepad button (or trigger) pressed becomes the action's button. Échap cancels.
+func _capture_input(event: InputEvent) -> void:
+	var binding := ""
+	if event is InputEventJoypadButton and event.pressed:
+		if event.button_index == JOY_BUTTON_START:
+			return
+		binding = "b%d" % event.button_index
+	elif event is InputEventJoypadMotion and event.axis_value > 0.6 and (event.axis == JOY_AXIS_TRIGGER_LEFT or event.axis == JOY_AXIS_TRIGGER_RIGHT):
+		binding = "a%d" % event.axis
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		binding = "cancel"
+	if binding == "":
+		return
+	get_viewport().set_input_as_handled()
+	var action := _capturing
+	_capturing = ""
+	if binding != "cancel":
+		G.set_pad_binding(action, binding)
+	_refresh_pad_buttons()
+	# Keep the focus on the button so the menu stays usable with the pad.
+	(_pad_buttons[action] as Button).grab_focus.call_deferred()
+
+
+# ------------------------------------------------------------------------------------------------
+# Challenges
+# ------------------------------------------------------------------------------------------------
+func _build_challenges() -> Control:
+	var s := _screen(0.75)
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	s.add_child(cc)
+	var panel := PanelContainer.new()
+	cc.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	panel.add_child(v)
+	_big_label(v, "DÉFIS", 48, Color(0.9, 0.9, 0.88))
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(900, 470)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(scroll)
+	_challenge_list = VBoxContainer.new()
+	_challenge_list.add_theme_constant_override("separation", 8)
+	_challenge_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_challenge_list)
+	var back := _button(v, "Retour", show_title)
+	back.name = "Back"
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	return s
+
+
+func show_challenges() -> void:
+	hide_all()
+	for c in _challenge_list.get_children():
+		c.queue_free()
+	for i in G.CHALLENGES.size():
+		var c: Dictionary = G.CHALLENGES[i]
+		var t := G.challenge_tier(i)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 14)
+		_challenge_list.add_child(row)
+		var name_box := VBoxContainer.new()
+		name_box.custom_minimum_size = Vector2(330, 0)
+		row.add_child(name_box)
+		var title := Label.new()
+		title.add_theme_font_size_override("font_size", 22)
+		var stars := ""
+		for k in 3:
+			stars += "★" if k < t else "☆"
+		title.text = "%s  %s" % [c.name, stars]
+		title.add_theme_color_override("font_color", Color(1, 0.85, 0.35) if t >= 3 else Color(0.95, 0.92, 0.88))
+		name_box.add_child(title)
+		var desc := Label.new()
+		desc.add_theme_font_size_override("font_size", 15)
+		desc.add_theme_color_override("font_color", Color(0.72, 0.7, 0.68))
+		var goal: int = c.goals[mini(t, 2)]
+		desc.text = (c.desc % goal) if t < 3 else "Terminé"
+		name_box.add_child(desc)
+		var bar := ProgressBar.new()
+		bar.custom_minimum_size = Vector2(320, 16)
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bar.show_percentage = false
+		bar.max_value = goal
+		bar.value = mini(G.pstat(c.stat), goal)
+		bar.add_theme_stylebox_override("fill", _flat(Color(0.3, 0.8, 0.4) if t >= 3 else Color(0.85, 0.2, 0.1)))
+		bar.add_theme_stylebox_override("background", _flat(Color(0.15, 0.1, 0.1)))
+		row.add_child(bar)
+		var num := Label.new()
+		num.add_theme_font_size_override("font_size", 17)
+		num.custom_minimum_size = Vector2(110, 0)
+		num.text = "%d / %d" % [mini(G.pstat(c.stat), goal), goal]
+		row.add_child(num)
+		var reward := Label.new()
+		reward.add_theme_font_size_override("font_size", 17)
+		reward.add_theme_color_override("font_color", Color(1, 0.85, 0.35))
+		reward.text = ("+%d XP" % int(c.xp[t])) if t < 3 else "✓"
+		row.add_child(reward)
+	_challenges.visible = true
+	_focus(_challenges.find_child("Back", true, false))
+
+
+# ------------------------------------------------------------------------------------------------
+# Armory: kills per weapon and camouflages
+# ------------------------------------------------------------------------------------------------
+func _build_armory() -> Control:
+	var s := _screen(0.75)
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	s.add_child(cc)
+	var panel := PanelContainer.new()
+	cc.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	panel.add_child(v)
+	_big_label(v, "ARMURERIE", 48, Color(0.9, 0.9, 0.88))
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 24)
+	v.add_child(cols)
+	_armory_grid = GridContainer.new()
+	_armory_grid.columns = 3
+	_armory_grid.add_theme_constant_override("h_separation", 8)
+	_armory_grid.add_theme_constant_override("v_separation", 8)
+	cols.add_child(_armory_grid)
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 8)
+	cols.add_child(right)
+	_armory_preview = LobbyVisuals.WeaponPreview.new(Vector2i(560, 200))
+	right.add_child(_armory_preview)
+	_armory_name = Label.new()
+	_armory_name.add_theme_font_size_override("font_size", 26)
+	_armory_name.add_theme_color_override("font_color", Color(1, 0.9, 0.8))
+	right.add_child(_armory_name)
+	_armory_kills = Label.new()
+	_armory_kills.add_theme_font_size_override("font_size", 17)
+	_armory_kills.add_theme_color_override("font_color", Color(0.75, 0.72, 0.7))
+	right.add_child(_armory_kills)
+	_section(right, "CAMOUFLAGE")
+	_armory_camos = HBoxContainer.new()
+	_armory_camos.add_theme_constant_override("separation", 6)
+	right.add_child(_armory_camos)
+	var back := _button(v, "Retour", show_title)
+	back.name = "Back"
+	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	return s
+
+
+func show_armory() -> void:
+	hide_all()
+	for c in _armory_grid.get_children():
+		c.queue_free()
+	var group := ButtonGroup.new()
+	for id in G.WEAPONS:
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(150, 78)
+		b.add_theme_font_size_override("font_size", 14)
+		b.text = "%s — %d" % [LobbyVisuals.short_name(id), int(G.weapon_kills.get(id, 0))]
+		b.icon = LobbyVisuals.weapon_icon(b, id, Vector2i(240, 90))
+		b.expand_icon = true
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = id == _armory_weapon
+		b.pressed.connect(func(): _show_armory_weapon(id))
+		b.focus_entered.connect(func(): _show_armory_weapon(id))
+		_armory_grid.add_child(b)
+	_show_armory_weapon(_armory_weapon)
+	_armory.visible = true
+	_focus(_armory.find_child("Back", true, false))
+
+
+func _show_armory_weapon(id: String, preview_camo := "*") -> void:
+	_armory_weapon = id
+	_armory_preview.show_weapon(id, preview_camo)
+	_armory_name.text = G.WEAPONS[id].name
+	var kills := int(G.weapon_kills.get(id, 0))
+	var next := ""
+	for c in G.CAMOS:
+		if kills < int(c[2]):
+			next = " — prochain camouflage à %d" % int(c[2])
+			break
+	_armory_kills.text = "%d éliminations%s" % [kills, next]
+	for c in _armory_camos.get_children():
+		c.queue_free()
+	var group := ButtonGroup.new()
+	for c in G.CAMOS:
+		var camo: String = c[0]
+		var unlocked := G.is_camo_unlocked(id, camo)
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(88, 88)
+		b.add_theme_font_size_override("font_size", 13)
+		b.text = c[1] if unlocked else "%d" % int(c[2])
+		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.expand_icon = true
+		if camo != "":
+			b.icon = load("res://assets/tex/camo_%s.png" % camo)
+		if not unlocked:
+			b.add_theme_color_override("icon_normal_color", Color(0.2, 0.2, 0.2))
+			b.add_theme_color_override("font_color", Color(1, 0.55, 0.4))
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = G.camo_for(id) == camo
+		b.pressed.connect(func():
+			if unlocked:
+				G.camo_choice[id] = camo
+				G.save_settings()
+				_show_armory_weapon(id)
+			else:
+				# Locked: a look at it on the weapon, without equipping it.
+				_show_armory_weapon(id, camo))
+		_armory_camos.add_child(b)

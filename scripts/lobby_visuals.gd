@@ -37,10 +37,10 @@ static func _stage(size: Vector2i, bg: Color, transparent: bool) -> SubViewport:
 
 
 ## Builds the gun centred on the origin, seen from its right side by a camera on +X.
-static func _gun_on_stage(sv: SubViewport, weapon_id: String, tier: int, fill: float) -> Node3D:
+static func _gun_on_stage(sv: SubViewport, weapon_id: String, tier: int, fill: float, camo := "") -> Node3D:
 	var pivot := Node3D.new()
 	sv.add_child(pivot)
-	var model := GunShapes.build_model(weapon_id, G.gun_mats_for(tier))
+	var model := GunShapes.build_model(weapon_id, G.gun_mats_for(tier, camo))
 	var sh := GunShapes.shape(weapon_id)
 	var length: float = sh.muzzle.x
 	model.position = Vector3(0, -0.02, length / 2.0 - sh.grip.x)
@@ -112,14 +112,17 @@ class WeaponPreview:
 		_sv = LobbyVisuals._stage(view_size * 2, Color(0.035, 0.02, 0.02), false)
 		add_child(_sv)
 
-	func show_weapon(weapon_id: String) -> void:
-		if weapon_id == _id:
+	## `camo`: "*" = the camouflage chosen for that weapon.
+	func show_weapon(weapon_id: String, camo := "*") -> void:
+		if camo == "*":
+			camo = G.camo_for(weapon_id)
+		if weapon_id + "/" + camo == _id:
 			return
-		_id = weapon_id
+		_id = weapon_id + "/" + camo
 		for c in _sv.get_children():
 			if c is Camera3D or (c is Node3D and not c is DirectionalLight3D and not c is WorldEnvironment):
 				c.queue_free()
-		_pivot = LobbyVisuals._gun_on_stage(_sv, weapon_id, 0, 1.45)
+		_pivot = LobbyVisuals._gun_on_stage(_sv, weapon_id, 0, 1.45, camo)
 		_t = 0.0
 
 	func _process(delta: float) -> void:

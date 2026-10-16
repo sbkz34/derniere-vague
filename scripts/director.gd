@@ -84,6 +84,7 @@ func _process(delta: float) -> void:
 
 func _begin_round() -> void:
 	G.round_num += 1
+	G.stat_max("round", G.round_num)
 	in_round = true
 	_drops = 0
 	repair_points_left = 500

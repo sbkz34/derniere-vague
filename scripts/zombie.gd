@@ -272,6 +272,7 @@ func take_damage(amount: float, at: Vector3, dir: Vector3, head: bool, how: Stri
 		G.kills += 1
 		if head:
 			G.headshots += 1
+		G.record_kill(self, how, weapon_id, head)
 		_die(head, dir)
 		return "kill"
 	if how != "bomb" and how != "trap":

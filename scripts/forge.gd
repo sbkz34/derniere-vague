@@ -128,6 +128,9 @@ func interact(player: Node) -> void:
 				return
 			_weapon = w.id
 			_tier = int(w.up) + 1
+			G.stat_add("upgrades")
+			if _tier >= G.MAX_TIER:
+				G.stat_add("ultimes")
 			player.remove_current_weapon()
 			state = State.WORKING
 			_timer = 3.2

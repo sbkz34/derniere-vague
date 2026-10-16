@@ -12,6 +12,9 @@ var _popups: VBoxContainer
 var _weapon: Label
 var _ammo: Label
 var _equip: Label
+var _toast: Label
+var _toast_t := 0.0
+var _toast_queue: Array[String] = []
 var _hint: Label
 var _msg: Label
 var _msg_t := 0.0
@@ -192,6 +195,17 @@ func build(p_player: Player, p_director: Director) -> void:
 	_msg.offset_right = 0
 	_msg.offset_top = 90
 	_msg.offset_bottom = 150
+	# Challenge / camouflage toasts, just under the messages.
+	_toast = _label(_frame, 26, Color(0.55, 1.0, 0.6), 7)
+	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_toast.anchor_left = 0.1
+	_toast.anchor_right = 0.9
+	_toast.offset_left = 0
+	_toast.offset_right = 0
+	_toast.offset_top = 152
+	_toast.offset_bottom = 190
+	_toast.modulate.a = 0.0
 	_msg.modulate.a = 0.0
 
 	_fps = _label(_frame, 18, Color(0.7, 1, 0.7), 4)
@@ -204,6 +218,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_layout(G.input_mode)
 	G.points_changed.connect(_on_points)
 	G.message.connect(_on_message)
+	G.challenge_done.connect(_queue_toast)
+	G.camo_unlocked.connect(_queue_toast)
 	player.weapons_changed.connect(_refresh_weapon)
 	player.perks_changed.connect(_refresh_perks)
 	player.hurt.connect(_on_hurt)
@@ -282,6 +298,10 @@ func _refresh_perks() -> void:
 		_perks.add_child(p)
 
 
+func _queue_toast(text: String) -> void:
+	_toast_queue.append(text)
+
+
 func _on_message(text: String, color: Color) -> void:
 	_msg.text = text
 	_msg.label_settings.font_color = color
@@ -358,6 +378,14 @@ func _process(delta: float) -> void:
 	if _hurt_t > 0.0:
 		_hurt_t -= delta
 	_flash.color.a = maxf(0.0, _flash.color.a - delta * 0.8)
+	# Toasts, one after the other.
+	if _toast_t > 0.0:
+		_toast_t -= delta
+		_toast.modulate.a = clampf(_toast_t / 0.5, 0.0, 1.0)
+	elif not _toast_queue.is_empty():
+		_toast.text = _toast_queue.pop_front()
+		_toast.label_settings.font_color = Color(0.55, 1.0, 0.6) if _toast.text.begins_with("DÉFI") else Color(1.0, 0.8, 0.4)
+		_toast_t = 3.5
 	# Message fade.
 	if _msg_t > 0.0:
 		_msg_t -= delta

@@ -120,7 +120,7 @@ func _attack(delta: float) -> void:
 			player.shake(0.35)
 
 
-func take_damage(amount: float, at: Vector3, dir: Vector3, head: bool, how: String, _weapon_id: String) -> String:
+func take_damage(amount: float, at: Vector3, dir: Vector3, head: bool, how: String, weapon_id: String) -> String:
 	if not alive:
 		return ""
 	if how == "bomb":
@@ -137,6 +137,7 @@ func take_damage(amount: float, at: Vector3, dir: Vector3, head: bool, how: Stri
 		G.kills += 1
 		if head:
 			G.headshots += 1
+		G.record_kill(self, how, weapon_id, head)
 		_die(head, dir)
 		return "kill"
 	if how != "bomb" and how != "trap":

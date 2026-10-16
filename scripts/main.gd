@@ -100,7 +100,7 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test:
 		G.autostart = false
 		_start_game()
 	else:
@@ -121,6 +121,8 @@ func _ready() -> void:
 		_run_gadget_test()
 	if G.special_test:
 		_run_special_test()
+	if G.progress_test:
+		_run_progress_test()
 
 
 func _start_game() -> void:
@@ -145,7 +147,7 @@ func _start_game() -> void:
 
 
 func _testing() -> bool:
-	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test
+	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test
 
 
 # ------------------------------------------------------------------------------------------------
@@ -877,4 +879,104 @@ func _run_special_test() -> void:
 	trap.interact(player)
 	if trap.is_active(): problems.append("trap ignored the cooldown")
 	print("[specialtest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
+	get_tree().quit()
+
+
+## Challenges give their experience once per tier, kills unlock camouflages that go on the
+## weapon, gamepad buttons can be swapped and reset, and all of it survives a reload.
+func _run_progress_test() -> void:
+	director.set_process(false)
+	player.targetable = false
+	await _wait(0.5)
+	var problems: Array[String] = []
+	G.stats = {}
+	G.weapon_kills = {}
+	G.challenges_done = {}
+	G.camo_choice = {}
+	G.reset_pad_map()
+	var xp0 := G.xp
+	# Challenge: the 100th kill completes "Tueur I".
+	G.stats["kills"] = 99
+	var z := _test_zombie(Vector3(0, 0.05, -3), 10.0)
+	await _wait(0.2)
+	z.take_damage(50.0, z.aim_point(), Vector3.FORWARD, false, "gun", "faucon")
+	if G.pstat("kills") != 100: problems.append("kills %d" % G.pstat("kills"))
+	if G.xp != xp0 + 300 or G.session_challenge_xp != 300: problems.append("challenge xp %d" % (G.xp - xp0))
+	if G.challenge_tier(0) != 1: problems.append("tier %d" % G.challenge_tier(0))
+	# The same tier never pays twice.
+	G.stats["kills"] = 150
+	G._check_challenges("kills")
+	if G.xp != xp0 + 300: problems.append("paid twice")
+	# Camouflage: the 50th Faucon kill unlocks and puts on Treillis.
+	G.weapon_kills["faucon"] = 49
+	var z2 := _test_zombie(Vector3(1, 0.05, -3), 10.0)
+	await _wait(0.2)
+	z2.take_damage(50.0, z2.aim_point(), Vector3.FORWARD, false, "gun", "faucon")
+	if G.camo_for("faucon") != "treillis": problems.append("camo '%s'" % G.camo_for("faucon"))
+	if G.is_camo_unlocked("faucon", "desert"): problems.append("desert unlocked too early")
+	player.give_weapon("faucon", 0, false)
+	await _wait(0.6)
+	var textured := false
+	for mi in player.view.find_children("*", "MeshInstance3D", true, false):
+		var m := (mi as MeshInstance3D).material_override as StandardMaterial3D
+		if m and m.albedo_texture and m.albedo_texture.resource_path.find("camo_treillis") >= 0:
+			textured = true
+	if not textured: problems.append("camo not on the viewmodel")
+	await _screenshot("camo_viewmodel")
+	player.give_weapon("faucon", 2, false)
+	await _wait(0.6)
+	await _screenshot("camo_gold")
+	# Gamepad remapping: grenade on Y, the swap takes RB.
+	G.input_mode = "pad"
+	G.set_pad_binding("grenade", "b3")
+	var y := InputEventJoypadButton.new()
+	y.device = 5
+	y.button_index = JOY_BUTTON_Y
+	y.pressed = true
+	var rb := InputEventJoypadButton.new()
+	rb.device = 5
+	rb.button_index = JOY_BUTTON_RIGHT_SHOULDER
+	rb.pressed = true
+	if not InputMap.event_is_action(y, "grenade") or InputMap.event_is_action(y, "swap"): problems.append("Y not on grenade only")
+	if not InputMap.event_is_action(rb, "swap"): problems.append("RB not on swap")
+	if G.button_name("grenade") != "Y" or G.button_name("swap") != "RB": problems.append("names %s/%s" % [G.button_name("grenade"), G.button_name("swap")])
+	# Everything comes back after loading the settings again.
+	G.save_settings()
+	G.stats = {}
+	G.weapon_kills = {}
+	G.camo_choice = {}
+	G.pad_map = G.PAD_DEFAULT.duplicate()
+	G.apply_pad_map()
+	G._load_settings()
+	if G.pstat("kills") != 151 or int(G.weapon_kills.get("faucon", 0)) != 50 or G.camo_for("faucon") != "treillis": problems.append("progress not saved")
+	if G.pad_map.grenade != "b3" or not InputMap.event_is_action(y, "grenade"): problems.append("pad map not saved")
+	G.reset_pad_map()
+	if not InputMap.event_is_action(y, "swap") or not InputMap.event_is_action(rb, "grenade"): problems.append("reset")
+	# Menus (for the screenshots).
+	G.input_mode = "kbm"
+	G.weapon_kills["faucon"] = 420
+	hud.visible = false
+	menu.show_challenges()
+	await _wait(0.4)
+	await _screenshot("challenges")
+	menu._armory_weapon = "faucon"
+	menu.show_armory()
+	await _wait(0.6)
+	await _screenshot("armory")
+	menu._open_options(menu._title)
+	menu._start_capture("grenade")
+	await _wait(0.3)
+	for sc in menu._options.find_children("*", "ScrollContainer", true, false):
+		(sc as ScrollContainer).scroll_vertical = 700
+	await _wait(0.3)
+	await _screenshot("options_pad")
+	menu._capture_input(rb)
+	if G.pad_map.grenade != "b10": problems.append("capture %s" % G.pad_map.grenade)
+	G.stats = {}
+	G.weapon_kills = {}
+	G.challenges_done = {}
+	G.camo_choice = {}
+	G.xp = xp0
+	G.save_settings()
+	print("[progresstest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
 	get_tree().quit()
