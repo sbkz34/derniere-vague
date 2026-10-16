@@ -11,6 +11,7 @@ var _points: Label
 var _popups: VBoxContainer
 var _weapon: Label
 var _ammo: Label
+var _equip: Label
 var _hint: Label
 var _msg: Label
 var _msg_t := 0.0
@@ -20,6 +21,7 @@ var _vignette: TextureRect
 var _flash: ColorRect
 var _down: ColorRect
 var _cross: Crosshair
+var _dmg: DamageIndicator
 var _fps: Label
 var _reload_tip: Label
 var _round_tween: Tween
@@ -94,6 +96,11 @@ func build(p_player: Player, p_director: Director) -> void:
 	_cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cross.player = player
 	_root.add_child(_cross)
+	_dmg = DamageIndicator.new()
+	_dmg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dmg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dmg.player = player
+	_root.add_child(_dmg)
 
 	# Corner elements live in a frame that can be scaled and pulled in from the screen edges
 	# (options), e.g. for curved screens.
@@ -128,7 +135,7 @@ func build(p_player: Player, p_director: Director) -> void:
 	br.anchor_bottom = 1.0
 	br.offset_left = -420
 	br.offset_right = -40
-	br.offset_top = -230
+	br.offset_top = -290
 	br.offset_bottom = -24
 	br.alignment = BoxContainer.ALIGNMENT_END
 	br.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -143,6 +150,8 @@ func build(p_player: Player, p_director: Director) -> void:
 	_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ammo = _label(br, 40, Color.WHITE, 8)
 	_ammo.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_equip = _label(br, 22, Color(0.85, 0.95, 0.75), 5)
+	_equip.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	# Hint (bottom centre) and active bonuses above it.
 	_hint = _label(_frame, 26, Color(1, 1, 1), 7)
@@ -213,12 +222,12 @@ func _layout(mode: String) -> void:
 		_br.anchor_top = 0.0
 		_br.anchor_bottom = 0.0
 		_br.offset_top = -40
-		_br.offset_bottom = 200
+		_br.offset_bottom = 230
 		_br.offset_right = -24
 	else:
 		_br.anchor_top = 1.0
 		_br.anchor_bottom = 1.0
-		_br.offset_top = -230
+		_br.offset_top = -290
 		_br.offset_bottom = -24
 		_br.offset_right = -40
 
@@ -277,7 +286,8 @@ func _on_message(text: String, color: Color) -> void:
 	_msg_t = 2.2
 
 
-func _on_hurt(_dir: Vector3, _amount: float) -> void:
+func _on_hurt(dir: Vector3, _amount: float) -> void:
+	_dmg.add_hit(dir)
 	_hurt_t = 0.35
 	_flash.color.a = 0.25
 
@@ -350,6 +360,10 @@ func _process(delta: float) -> void:
 		_msg_t -= delta
 		if _msg_t < 0.6:
 			_msg.modulate.a = maxf(0.0, _msg_t / 0.6)
+	var eq := "Grenades %s" % "●".repeat(player.grenades) if player.grenades > 0 else "Grenades —"
+	if player.has_decoy:
+		eq += "    Leurres %s" % ("●".repeat(player.decoys) if player.decoys > 0 else "—")
+	_equip.text = eq
 	_fps.visible = bool(G.settings.show_fps)
 	if _fps.visible:
 		_fps.text = "%d FPS" % Engine.get_frames_per_second()

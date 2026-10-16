@@ -345,30 +345,51 @@ func _front_of_queue() -> bool:
 	return true
 
 
+## A playing decoy within reach, if any: zombies go for it instead of the player.
+func _active_lure() -> Node3D:
+	for l in get_tree().get_nodes_in_group("lures"):
+		var t := l as Throwable
+		if t and t.is_luring() and t.global_position.distance_to(global_position) < 40.0:
+			return t
+	return null
+
+
 func _chase(delta: float) -> void:
-	if not player or not player.targetable:
+	var lure := _active_lure()
+	if lure == null and (not player or not player.targetable):
 		_desired = Vector3.ZERO
 		_move(delta)
 		return
-	var to_player := player.global_position - global_position
+	var to_player := player.global_position - global_position if player else Vector3(99, 0, 99)
 	var flat_d := Vector2(to_player.x, to_player.z).length()
-	if flat_d < attack_range and abs(to_player.y) < 1.5:
+	if player and player.targetable and flat_d < attack_range and abs(to_player.y) < 1.5:
 		state = State.ATTACK
 		_attack_t = 0.0
 		_attack_hit_done = false
 		_attack_sound()
 		return
+	var goal: Vector3 = lure.global_position if lure else player.global_position
+	var to_goal := goal - global_position
+	var goal_d := Vector2(to_goal.x, to_goal.z).length()
+	if lure and goal_d < 1.4:
+		# Crowd around the decoy, clawing at it.
+		_desired = Vector3.ZERO
+		_face(goal)
+		_hit_kick = maxf(_hit_kick, 0.15 * absf(sin(_phase * 3.0)))
+		_move(delta)
+		_stuck_t = 0.0
+		return
 	_repath -= delta
 	if _repath <= 0.0:
 		_repath = 0.25
-		agent.target_position = player.global_position
+		agent.target_position = goal
 	var next := agent.get_next_path_position()
 	var dir := next - global_position
 	dir.y = 0
-	if dir.length() < 0.05 or flat_d < 2.5:
-		dir = Vector3(to_player.x, 0, to_player.z)
+	if dir.length() < 0.05 or goal_d < 2.5:
+		dir = Vector3(to_goal.x, 0, to_goal.z)
 	_desired = dir.normalized() * speed
-	_face(global_position + (_desired if _desired.length() > 0.1 else to_player))
+	_face(global_position + (_desired if _desired.length() > 0.1 else to_goal))
 	_move(delta)
 	# Unstick: if barely moving for a while far from the player, start over at a window.
 	_stuck_t += delta
@@ -376,7 +397,7 @@ func _chase(delta: float) -> void:
 		if global_position.distance_to(_stuck_pos) < 0.6:
 			_stuck_count += 1
 			# Far away: start over at a window. Close but blocked for a long time: same.
-			if director and (flat_d > 4.0 or _stuck_count >= 3):
+			if director and (goal_d > 4.0 or _stuck_count >= 3):
 				director.respawn(self)
 				return
 		else:

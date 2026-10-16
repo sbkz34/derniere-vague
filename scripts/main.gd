@@ -95,11 +95,12 @@ func _ready() -> void:
 	player.died.connect(_on_player_died)
 	director.round_started.connect(_on_round_started)
 	director.round_ended.connect(_on_round_ended)
+	director.round_started.connect(player.on_round_started)
 
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test:
 		G.autostart = false
 		_start_game()
 	else:
@@ -116,6 +117,8 @@ func _ready() -> void:
 		_run_save_test()
 	if G.swap_test:
 		_run_swap_test()
+	if G.gadget_test:
+		_run_gadget_test()
 
 
 func _start_game() -> void:
@@ -140,7 +143,7 @@ func _start_game() -> void:
 
 
 func _testing() -> bool:
-	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test
+	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test
 
 
 # ------------------------------------------------------------------------------------------------
@@ -161,6 +164,8 @@ func _collect_save(resume_round: int) -> Dictionary:
 		"doors": opened, "weapons": weapons, "cur": player.cur, "perks": player.perks.duplicate(),
 		"second_souffle_bought": player.second_souffle_bought,
 		"next_dog_round": director.next_dog_round, "dog_rounds_done": director._dog_rounds_done,
+		"grenades": player.grenades, "decoys": player.decoys, "has_decoy": player.has_decoy,
+		"power": G.power_on,
 	}
 
 
@@ -194,6 +199,13 @@ func _apply_save(d: Dictionary) -> void:
 				player.hp = player.max_hp
 	player.second_souffle_bought = int(d.get("second_souffle_bought", 0))
 	player.perks_changed.emit()
+	player.has_decoy = bool(d.get("has_decoy", false))
+	player.decoys = int(d.get("decoys", 0)) if player.has_decoy else 0
+	# The round start that follows hands out this round's grenades on top of the saved ones.
+	player.grenades = int(d.get("grenades", 0))
+	player.equipment_changed.emit()
+	if bool(d.get("power", false)):
+		level.restore_power()
 	director.start_at(int(d.get("round", 1)), int(d.get("next_dog_round", 6)), int(d.get("dog_rounds_done", 0)))
 	G.say("Partie reprise — manche %d" % int(d.get("round", 1)), Color(1, 0.85, 0.4))
 
@@ -319,6 +331,7 @@ func _on_player_died() -> void:
 
 func _process(delta: float) -> void:
 	touch.show_action = player.hint != "" and player.interact_target != null
+	touch.show_decoy = player.has_decoy
 	if not G.playing and menu_cam.current:
 		# Slow drift around the hall for the title screen.
 		_menu_t += delta
@@ -598,6 +611,10 @@ func _run_save_test() -> void:
 		await _wait(2.0)
 		player.drink_perk("main_leste")
 		await _wait(2.0)
+		level.power_switch.interact(player)
+		player.give_decoys()
+		player.decoys = 2
+		player.grenades = 3
 		G.round_num = 7
 		G.write_save(_collect_save(8))
 		G.pending_load = G.read_save()
@@ -614,6 +631,8 @@ func _run_save_test() -> void:
 	if w.is_empty() or int(w.up) != 2 or int(w.mag) != 7: problems.append("weapon %s" % str(w))
 	if not player.has_perk("cuirasse") or not player.has_perk("main_leste") or player.max_hp != 250.0: problems.append("perks")
 	if G.round_num != 7 or director.in_round: problems.append("round %d" % G.round_num)
+	if not G.power_on or level.power_switch.enabled: problems.append("power")
+	if not player.has_decoy or player.decoys != 2 or player.grenades != 3: problems.append("equipment %d/%d" % [player.grenades, player.decoys])
 	G.delete_save()
 	print("[savetest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
 	get_tree().quit()
@@ -636,4 +655,107 @@ func _run_swap_test() -> void:
 	await _wait(1.0)
 	ok = ok and int(w.mag) == 3
 	print("[swaptest] %s (reloading=%s now=%s mag=%d)" % ["OK" if ok else "FAILED", reloading, player.current_weapon().id, int(w.mag)])
+	get_tree().quit()
+
+
+func _test_zombie(pos: Vector3, hp: float) -> Zombie:
+	var z := Zombie.new()
+	z.setup(director, player, level.windows[0], 0, hp, "run")
+	zombies.add_child(z)
+	z.global_position = pos
+	z.outside = false
+	z.state = Zombie.State.CHASE
+	z.reset_physics_interpolation()
+	return z
+
+
+## Power gates the perks; a thrown grenade leaves the hand; a grenade kills a group;
+## a decoy pulls a zombie away from where it stood.
+func _run_gadget_test() -> void:
+	director.set_process(false)
+	player.targetable = false
+	await _wait(0.5)
+	var problems: Array[String] = []
+	# Power.
+	var machine: PerkMachine = null
+	for c in level.get_children():
+		if c is PerkMachine:
+			machine = c
+			break
+	G.points = 50000
+	_pose(Vector3(0, 0, 4), Vector3(0, 1.2, -5))
+	await _wait(1.0)
+	await _screenshot("hall_no_power")
+	_pose(Vector3(16.8, 0, 19), Vector3(18.85, 1.3, 19))
+	await _wait(0.4)
+	await _screenshot("power_switch_off")
+	_pose(Vector3(17.0, 0, 9.0), Vector3(-1, 1.2, 19.5))
+	await _wait(0.4)
+	await _screenshot("perks_no_power")
+	if G.power_on: problems.append("power on at start")
+	machine.interact(player)
+	await _wait(0.2)
+	if player.has_perk(machine.perk_id) or G.points != 50000: problems.append("perk bought without power")
+	if machine.get_hint(player).find("courant") < 0: problems.append("hint '%s'" % machine.get_hint(player))
+	level.power_switch.interact(player)
+	await _wait(0.2)
+	if not G.power_on: problems.append("switch did nothing")
+	_pose(Vector3(16.8, 0, 19), Vector3(18.85, 1.3, 19))
+	await _wait(1.6)
+	await _screenshot("power_switch_on")
+	_pose(Vector3(17.0, 0, 9.0), Vector3(-1, 1.2, 19.5))
+	await _wait(0.4)
+	await _screenshot("perks_power")
+	machine.interact(player)
+	await _wait(3.0)
+	if not player.has_perk(machine.perk_id): problems.append("perk not bought with power")
+	# Throwing.
+	_pose(Vector3(0, 0, 4), Vector3(0, 0, -4))
+	await _wait(0.3)
+	player.grenades = 2
+	player.throw_item("grenade")
+	await _wait(0.1)
+	await _screenshot("throw")
+	var flying := 0
+	for c in player.get_parent().get_children():
+		if c is Throwable:
+			flying += 1
+	if player.grenades != 1 or flying != 1: problems.append("throw (left %d, flying %d)" % [player.grenades, flying])
+	await _wait(3.0)
+	# Grenade on a group.
+	var group: Array[Zombie] = []
+	for i in 3:
+		group.append(_test_zombie(Vector3(-3.0 + i * 0.8, 0.05, -3.0), 150.0))
+	await _wait(0.3)
+	var g := Throwable.new()
+	g.setup("grenade", Vector3.ZERO, director)
+	player.get_parent().add_child(g)
+	g.global_position = Vector3(-2.2, 0.3, -2.6)
+	await _wait(2.8)
+	var dead := 0
+	for z in group:
+		if not is_instance_valid(z) or not z.alive:
+			dead += 1
+	if dead != 3: problems.append("grenade killed %d/3" % dead)
+	await _wait(2.0)
+	# Decoy.
+	var target := _test_zombie(Vector3(-4.0, 0.05, -4.0), 50000.0)
+	await _wait(0.5)
+	var start := target.global_position
+	var dc := Throwable.new()
+	dc.setup("decoy", Vector3.ZERO, director)
+	player.get_parent().add_child(dc)
+	dc.global_position = Vector3(4.0, 0.3, 3.0)
+	await _wait(3.0)
+	_pose(Vector3(0, 0, 6), Vector3(4.0, 0.5, 3.0))
+	hud._dmg.add_hit(Vector3(1, 0, 0))
+	hud._dmg.add_hit(Vector3(0, 0, 1))
+	await _wait(0.2)
+	await _screenshot("decoy_and_damage")
+	await _wait(2.8)
+	var dist := target.global_position.distance_to(dc.global_position)
+	if dist > 2.5: problems.append("decoy: zombie %.1f m away (moved %.1f m)" % [dist, start.distance_to(target.global_position)])
+	await _wait(3.0)
+	if is_instance_valid(target) and target.alive: problems.append("decoy blast did not kill")
+	print("[gadgettest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
 	get_tree().quit()

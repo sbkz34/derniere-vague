@@ -102,11 +102,16 @@ func _process(delta: float) -> void:
 	_t += delta
 	if _glow:
 		var m := _glow.material_override as StandardMaterial3D
-		m.emission_energy_multiplier = 1.8 + 0.6 * sin(_t * 3.0) + (0.8 if randf() < 0.01 else 0.0)
+		if G.power_on:
+			m.emission_energy_multiplier = 1.8 + 0.6 * sin(_t * 3.0) + (0.8 if randf() < 0.01 else 0.0)
+		else:
+			m.emission_energy_multiplier = 0.05
 
 
 func get_hint(player: Node) -> String:
 	var info: Dictionary = G.PERKS[perk_id]
+	if not G.power_on:
+		return "%s : pas de courant" % info.name
 	if player.has_perk(perk_id):
 		return "%s : déjà bu" % info.name
 	if perk_id == "second_souffle" and player.second_souffle_bought >= 3:
@@ -115,6 +120,8 @@ func get_hint(player: Node) -> String:
 
 
 func interact(player: Node) -> void:
+	if not G.power_on:
+		return
 	if player.has_perk(perk_id) or not player.can_drink():
 		return
 	if perk_id == "second_souffle" and player.second_souffle_bought >= 3:

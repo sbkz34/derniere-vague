@@ -31,6 +31,14 @@ var inv: Array[Dictionary] = []
 var cur := 0
 var perks: Array[String] = []
 var second_souffle_bought := 0
+## Equipment: grenades (RB, +2 each round, max 4) and decoys from the box (LB, +1 each round, max 3).
+const MAX_GRENADES := 4
+const MAX_DECOYS := 3
+var grenades := 0   # round 1 gives the first two
+var decoys := 0
+var has_decoy := false
+var _throw_t := 0.0
+signal equipment_changed
 
 var max_hp := 100.0
 var hp := 100.0
@@ -156,7 +164,53 @@ func refill_ammo(id: String) -> void:
 func refill_all() -> void:
 	for w in inv:
 		w.reserve = G.stat(w, "reserve")
+	grenades = MAX_GRENADES
+	if has_decoy:
+		decoys = MAX_DECOYS
 	weapons_changed.emit()
+	equipment_changed.emit()
+
+
+func give_decoys() -> void:
+	has_decoy = true
+	decoys = MAX_DECOYS
+	equipment_changed.emit()
+	G.say("Leurres ×3 — %s pour lancer" % G.button_name("decoy"), Color(1, 0.8, 0.3))
+
+
+func on_round_started(_n: int) -> void:
+	grenades = mini(MAX_GRENADES, grenades + 2)
+	if has_decoy:
+		decoys = mini(MAX_DECOYS, decoys + 1)
+	equipment_changed.emit()
+
+
+func shake(amount: float) -> void:
+	_shake = maxf(_shake, amount)
+
+
+## Throws a grenade or a decoy along the view, with a little of the player's own speed.
+func throw_item(kind: String) -> void:
+	if _throw_t > 0.0 or downed or _drink_t > 0.0 or _knife_t > 0.0:
+		return
+	if kind == "grenade":
+		if grenades <= 0:
+			return
+		grenades -= 1
+	else:
+		if decoys <= 0:
+			return
+		decoys -= 1
+	_throw_t = 0.75
+	_reload_t = 0.0
+	view.play_anim("throw", 0.5)
+	G.play("knife", -6.0, 0.7)
+	var t := Throwable.new()
+	var fwd := -cam.global_basis.z
+	t.setup(kind, fwd * 13.0 + Vector3.UP * 3.0 + velocity * 0.5, director)
+	get_parent().add_child(t)
+	t.global_position = cam.global_position + fwd * 0.5 - cam.global_basis.y * 0.15
+	equipment_changed.emit()
 
 
 func give_weapon(id: String, tier: int, animate := true) -> void:
@@ -318,7 +372,7 @@ func _ads_amount() -> float:
 
 
 func _busy() -> bool:
-	return _reload_t > 0.0 or _swap_t > 0.0 or _knife_t > 0.0 or _drink_t > 0.0 or downed
+	return _reload_t > 0.0 or _swap_t > 0.0 or _knife_t > 0.0 or _drink_t > 0.0 or downed or _throw_t > 0.35
 
 
 func _process(delta: float) -> void:
@@ -407,6 +461,7 @@ func _fire_input() -> bool:
 
 func _update_timers(delta: float) -> void:
 	_fire_cd -= delta
+	_throw_t = maxf(0.0, _throw_t - delta)
 	_invuln = maxf(0.0, _invuln - delta)
 	if _swap_t > 0.0:
 		_swap_t -= delta
@@ -500,6 +555,15 @@ func _update_weapon(delta: float) -> void:
 		knife = true
 	if knife and _knife_t <= 0.0 and not downed and _drink_t <= 0.0:
 		_do_knife()
+	var throw_g: bool = Input.is_action_just_pressed("grenade") or (touch and touch.visible and touch.grenade_pressed)
+	var throw_d: bool = Input.is_action_just_pressed("decoy") or (touch and touch.visible and touch.decoy_pressed)
+	if touch and touch.visible:
+		touch.grenade_pressed = false
+		touch.decoy_pressed = false
+	if throw_g:
+		throw_item("grenade")
+	elif throw_d:
+		throw_item("decoy")
 	var firing := _fire_input()
 	if not firing:
 		_semi_ready = true

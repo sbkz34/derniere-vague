@@ -104,7 +104,7 @@ func get_hint(player: Node) -> String:
 		State.IDLE:
 			return "%s ouvrir la caisse mystère %s" % [use_text(), price_text(G.BOX_PRICE)]
 		State.READY:
-			return "%s prendre : %s" % [use_text(), G.WEAPONS[_result].name]
+			return "%s prendre : %s" % [use_text(), _item_name(_result)]
 	return ""
 
 
@@ -114,7 +114,10 @@ func interact(player: Node) -> void:
 			if G.spend(G.BOX_PRICE):
 				_start(player)
 		State.READY:
-			player.give_weapon(_result, 0)
+			if _result == "leurre":
+				player.give_decoys()
+			else:
+				player.give_weapon(_result, 0)
 			_close()
 
 
@@ -125,7 +128,10 @@ func _start(player: Node) -> void:
 	_swap_every = 0.07
 	var pool: Array = []
 	for id in G.BOX_POOL:
-		if not player.has_weapon(id):
+		if id == "leurre":
+			if not player.has_decoy:
+				pool.append(id)
+		elif not player.has_weapon(id):
 			pool.append(id)
 	if pool.is_empty():
 		pool = ["titan"]
@@ -150,8 +156,21 @@ func _clear_display() -> void:
 		c.queue_free()
 
 
+func _item_name(id: String) -> String:
+	return "Leurre (×3)" if id == "leurre" else G.WEAPONS[id].name
+
+
 func _show(id: String) -> void:
 	_clear_display()
+	if id == "leurre":
+		var decoy := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.18, 0.24, 0.16)
+		decoy.mesh = bm
+		decoy.material_override = Throwable._mat("decoy", Color(0.75, 0.15, 0.12))
+		_display.add_child(decoy)
+		_label.text = _item_name(id)
+		return
 	var m := GunShapes.build_model(id, _mats, 1.0)
 	_display.add_child(m)
 	m.rotation.y = PI / 2

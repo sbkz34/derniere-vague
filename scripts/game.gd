@@ -64,7 +64,8 @@ const WEAPONS := {
 		"kick": 2.5, "ads_fov": 58.0, "speed": 1.0, "price": 0, "splash": 3.0,
 		"splash_dmg": 900},
 }
-const BOX_POOL := ["titan", "aiguille", "machoire", "taureau", "desint", "faucon", "ouragan",
+## "leurre" is not a weapon: three decoys for the LB slot.
+const BOX_POOL := ["leurre", "titan", "aiguille", "machoire", "taureau", "desint", "faucon", "ouragan",
 		"vipere", "grele", "k14", "desint", "titan", "machoire"]
 
 # ------------------------------------------------------------------------------------------------
@@ -99,6 +100,9 @@ const BOX_PRICE := 950
 # ------------------------------------------------------------------------------------------------
 var points := 500
 var round_num := 0
+## Perk machines and the Forge need the breaker thrown.
+var power_on := false
+signal power_changed(on: bool)
 var kills := 0
 var headshots := 0
 var total_points := 0
@@ -114,6 +118,7 @@ var window_test := false
 var dog_test := false
 var save_test := false
 var swap_test := false
+var gadget_test := false
 var save_stage := 0
 var autostart := false
 var start_points := 500
@@ -185,6 +190,7 @@ func _ready() -> void:
 	dog_test = args.has("--dogtest")
 	save_test = args.has("--savetest")
 	swap_test = args.has("--swaptest")
+	gadget_test = args.has("--gadgettest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
@@ -203,6 +209,7 @@ func _ready() -> void:
 func reset_session() -> void:
 	points = start_points
 	round_num = 0
+	power_on = false
 	kills = 0
 	headshots = 0
 	total_points = 0
@@ -227,6 +234,13 @@ func spend(amount: int) -> bool:
 	points_changed.emit(points, -amount)
 	play("buy")
 	return true
+
+
+func set_power(on: bool) -> void:
+	if power_on == on:
+		return
+	power_on = on
+	power_changed.emit(on)
 
 
 func say(text: String, color := Color(1, 1, 1)) -> void:
@@ -359,8 +373,9 @@ func _setup_input() -> void:
 	_add("swap"); _key("swap", KEY_1); _key("swap", KEY_2); _key("swap", KEY_TAB)
 	_btn("swap", JOY_BUTTON_Y)
 	_add("knife"); _key("knife", KEY_V); _key("knife", KEY_C); _mouse("knife", MOUSE_BUTTON_MIDDLE)
-	_btn("knife", JOY_BUTTON_B); _btn("knife", JOY_BUTTON_RIGHT_SHOULDER)
-	_btn("knife", JOY_BUTTON_RIGHT_STICK)
+	_btn("knife", JOY_BUTTON_B); _btn("knife", JOY_BUTTON_RIGHT_STICK)
+	_add("grenade"); _key("grenade", KEY_G); _btn("grenade", JOY_BUTTON_RIGHT_SHOULDER)
+	_add("decoy"); _key("decoy", KEY_H); _btn("decoy", JOY_BUTTON_LEFT_SHOULDER)
 	_add("jump"); _key("jump", KEY_SPACE); _btn("jump", JOY_BUTTON_A)
 	_add("sprint"); _key("sprint", KEY_SHIFT); _btn("sprint", JOY_BUTTON_LEFT_STICK)
 	_add("pause"); _key("pause", KEY_ESCAPE); _key("pause", KEY_P); _btn("pause", JOY_BUTTON_START)
@@ -394,12 +409,13 @@ func button_name(action: String) -> String:
 	match input_mode:
 		"pad":
 			return {"use": "X", "interact": "X", "reload": "X", "swap": "Y", "knife": "B",
-				"jump": "A", "fire": "RT", "ads": "LT"}.get(action, action)
+				"jump": "A", "fire": "RT", "ads": "LT", "grenade": "RB", "decoy": "LB"}.get(action, action)
 		"touch":
 			return {"use": "ACTION", "interact": "ACTION", "reload": "RECHARGER"}.get(action, action)
 		_:
 			return {"use": "E", "interact": "E", "reload": "R", "swap": "1/2", "knife": "V",
-				"jump": "Espace", "fire": "Clic gauche", "ads": "Clic droit"}.get(action, action)
+				"jump": "Espace", "fire": "Clic gauche", "ads": "Clic droit", "grenade": "G",
+				"decoy": "H"}.get(action, action)
 
 
 # ------------------------------------------------------------------------------------------------

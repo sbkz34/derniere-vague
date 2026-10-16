@@ -24,6 +24,8 @@ var unlocked := {"hall": true, "atelier": false, "reserve": false, "labo": false
 var player_start := Vector3(0, 0.2, 2.0)
 var lights: Array[OmniLight3D] = []
 var _flicker: OmniLight3D
+var power_switch: PowerSwitch
+var _power_t := 0.0
 var _baking := false
 var env: Environment
 var moon: DirectionalLight3D
@@ -430,6 +432,31 @@ func _buyables() -> void:
 	var forge := Forge.new()
 	add_child(forge)
 	forge.build(Vector3(18.2, 0, 10.0), Vector3(-1, 0, 0), m_metal, G.gun_mats(), nav)
+	power_switch = PowerSwitch.new()
+	add_child(power_switch)
+	power_switch.build(Vector3(18.85, 1.4, 19.0), Vector3(-1, 0, 0), m_metal)
+	power_switch.switched.connect(_on_power)
+	_apply_power_lights(false)
+
+
+## Before the breaker is thrown the lights are weak and stutter; afterwards they come up full.
+func _apply_power_lights(on: bool) -> void:
+	for l in lights:
+		l.light_energy = 1.5 if on else 0.75
+
+
+func _on_power(silent: bool) -> void:
+	G.set_power(true)
+	if silent:
+		_apply_power_lights(true)
+	else:
+		_power_t = 1.2
+
+
+## Restores a saved game where the power was already on (no sound, no message).
+func restore_power() -> void:
+	if power_switch:
+		power_switch.turn_on(true)
 
 
 # ------------------------------------------------------------------------------------------------
@@ -488,5 +515,19 @@ func _on_bake_finished() -> void:
 
 
 func _process(delta: float) -> void:
+	if _power_t > 0.0:
+		# Lights stutter on one after another as the current comes back.
+		_power_t -= delta
+		var on_frac := 1.0 - _power_t / 1.2
+		for i in lights.size():
+			var lit := float(i) / lights.size() < on_frac
+			lights[i].light_energy = (1.5 if lit else 0.75) * (randf_range(0.6, 1.0) if lit and _power_t > 0.0 else 1.0)
+		if _power_t <= 0.0:
+			_apply_power_lights(true)
+		return
+	var full := 1.5 if G.power_on else 0.75
+	if not G.power_on and randf() < delta * 1.5:
+		var l := lights[randi() % lights.size()]
+		l.light_energy = randf_range(0.05, 0.4) if randf() < 0.6 else full
 	if _flicker and randf() < delta * 2.0:
-		_flicker.light_energy = randf_range(0.2, 1.5) if randf() < 0.5 else 1.5
+		_flicker.light_energy = randf_range(0.2, full) if randf() < 0.5 else full

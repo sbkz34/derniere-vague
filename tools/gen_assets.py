@@ -457,3 +457,40 @@ write_sfx("dog_death.wav", place(1.0, [(0.0, whimper, 0.8), (0.1, crackle, 0.9),
 d = 2.2
 rumble = lowpass(white(d), 140 + 300 * np.exp(-t(d) * 3)) * env(d, 0.01, 0.7) * 3
 write_sfx("thunder.wav", place(d, [(0.0, highpass(white(0.12), 1500) * env(0.12, 0.0005, 0.03), 1.0), (0.02, rumble, 1.0)]))
+
+
+# ----------------------------------------------------------------------------------------------
+# Equipment and power
+# ----------------------------------------------------------------------------------------------
+def _thud(dur, cutoff, decay):
+    return lowpass(white(dur), cutoff) * env(dur, 0.001, decay)
+
+
+# Grenade: sharp crack, heavy boom, debris.
+d = 1.6
+boom = lowpass(white(d), 900 * np.exp(-t(d) * 4) + 90) * env(d, 0.001, 0.35) * 2.5
+write("grenade_explode.wav", place(d, [(0.0, highpass(white(0.08), 1800) * env(0.08, 0.0005, 0.02), 1.0),
+                                       (0.0, boom, 1.0),
+                                       (0.0, np.sin(2 * np.pi * 45 * t(d)) * env(d, 0.002, 0.4), 1.2)]))
+# Decoy: a cheerful little march on a toy organ, 8 s, with a drum.
+melody = [523.3, 659.3, 784.0, 659.3, 698.5, 880.0, 784.0, 659.3, 587.3, 698.5, 880.0, 1046.5,
+          987.8, 784.0, 659.3, 523.3]
+def toy(hz, tt):
+    return np.sign(np.sin(2 * np.pi * hz * tt)) * 0.3 + np.sin(2 * np.pi * hz * 2 * tt) * 0.3
+tune = tone_seq(melody * 2, 0.24, toy, 0.18, gap=0.01, tail=0.3)
+drum = np.zeros_like(tune)
+for i in range(0, int(len(tune) / SR / 0.25)):
+    s0 = int(SR * i * 0.25)
+    hitn = lowpass(white(0.1), 300 if i % 2 == 0 else 2500) * env(0.1, 0.001, 0.03)
+    drum[s0:s0 + len(hitn)] += hitn[:max(0, min(len(hitn), len(drum) - s0))] * (1.2 if i % 2 == 0 else 0.5)
+write("decoy.wav", tune * 0.8 + drum)
+# Power on: heavy switch clunk, then a rising electrical hum.
+d = 2.5
+hum_f = 50 + 70 * np.clip(t(d) / 1.5, 0, 1)
+hum = (np.sin(2 * np.pi * np.cumsum(hum_f) / SR) + 0.5 * np.sin(2 * np.pi * np.cumsum(hum_f * 2) / SR)
+       + 0.3 * np.sign(np.sin(2 * np.pi * np.cumsum(hum_f * 3) / SR))) * np.clip(t(d) / 0.4, 0, 1) * np.clip((d - t(d)) / 0.6, 0, 1)
+write("power_on.wav", place(d, [(0.0, _thud(0.3, 300, 0.08), 2.0), (0.0, metal_tick(400, 0.06, 0.3), 1.2), (0.15, hum, 0.6)]))
+# Electric zap (trap).
+d = 0.5
+zap = (np.sign(np.sin(2 * np.pi * 120 * t(d))) * 0.4 + highpass(white(d), 3000)) * (rng.uniform(0, 1, len(t(d))) > 0.3) * np.exp(-t(d) * 3)
+write("zap.wav", zap)

@@ -11,6 +11,7 @@ var _flash_light: OmniLight3D
 var _knife: Node3D
 var _bottle: MeshInstance3D
 var _bottle_mat: StandardMaterial3D
+var _throw_vis: MeshInstance3D
 var _kind := "pistol"
 var _muzzle := Vector3.ZERO
 
@@ -103,6 +104,14 @@ func _ready() -> void:
 	_bottle.material_override = _bottle_mat
 	add_child(_bottle)
 	_bottle.visible = false
+	_throw_vis = MeshInstance3D.new()
+	var tsm := SphereMesh.new()
+	tsm.radius = 0.04
+	tsm.height = 0.09
+	_throw_vis.mesh = tsm
+	_throw_vis.material_override = Throwable._mat("grenade", Color(0.18, 0.24, 0.12))
+	add_child(_throw_vis)
+	_throw_vis.visible = false
 
 
 func _box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
@@ -186,6 +195,8 @@ func play_anim(name: String, length: float) -> void:
 		_knife.visible = true
 	if name == "drink":
 		_bottle.visible = true
+	if name == "throw":
+		_throw_vis.visible = true
 
 
 ## Reload with moving parts and timed sounds. empty: the chamber was empty (bolt / pump at the
@@ -379,6 +390,12 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 				base += Vector3(-0.05, -0.25, 0.05) * dip
 				_knife.position = Vector3(0.1 - 0.25 * p, -0.15 + 0.05 * dip, -0.35 - 0.15 * dip)
 				_knife.rotation = Vector3(-0.2, 0.9 - 1.6 * p, -0.4)
+			"throw":
+				# Gun drops, the left hand swings the grenade forward and lets go.
+				base += Vector3(0.05, -0.35, 0.1) * dip
+				var arc := clampf(p / 0.6, 0.0, 1.0)
+				_throw_vis.position = Vector3(-0.18, -0.28, -0.25).lerp(Vector3(-0.04, 0.05, -0.7), arc)
+				_throw_vis.visible = p < 0.6
 			"drink":
 				base += Vector3(0, -0.5, 0.1) * min(1.0, dip * 2.0)
 				var lift: float = clamp(p * 3.0, 0.0, 1.0) * clamp((1.0 - p) * 4.0, 0.0, 1.0)
@@ -391,6 +408,8 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 				_knife.visible = false
 			if _anim == "drink":
 				_bottle.visible = false
+			if _anim == "throw":
+				_throw_vis.visible = false
 			if _anim == "swap" and _pending_set:
 				_build(_pending_weapon)
 				_pending_set = false

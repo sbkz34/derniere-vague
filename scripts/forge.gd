@@ -100,6 +100,8 @@ func _box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) -> MeshIns
 
 
 func get_hint(player: Node) -> String:
+	if not G.power_on:
+		return "Forge : pas de courant"
 	match state:
 		State.IDLE:
 			var w: Dictionary = player.current_weapon()
@@ -115,6 +117,8 @@ func get_hint(player: Node) -> String:
 
 
 func interact(player: Node) -> void:
+	if not G.power_on:
+		return
 	match state:
 		State.IDLE:
 			var w: Dictionary = player.current_weapon()
@@ -181,4 +185,5 @@ func _process(delta: float) -> void:
 				_light.light_energy = 0.8
 		_:
 			if m:
-				m.emission_energy_multiplier = 1.6 + 0.4 * sin(_t * 2.0)
+				m.emission_energy_multiplier = (1.6 + 0.4 * sin(_t * 2.0)) if G.power_on else 0.05
+			_light.light_energy = 0.8 if G.power_on else 0.0

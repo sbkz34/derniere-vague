@@ -15,6 +15,9 @@ var reload_pressed := false
 var swap_pressed := false
 var knife_pressed := false
 var jump_pressed := false
+var grenade_pressed := false
+var decoy_pressed := false
+var show_decoy := false
 var show_action := false
 var action_label := "ACTION"
 
@@ -72,6 +75,9 @@ func _buttons() -> Dictionary:
 		"swap": [Vector2(w - 95, h - 330), 40.0, "ARME"],
 		"pause": [Vector2(56 + m, 56), 32.0, "II"],
 	}
+	b["grenade"] = [Vector2(w - 95, h - 450), 38.0, "GRENADE"]
+	if show_decoy:
+		b["decoy"] = [Vector2(w - 230, h - 450), 38.0, "LEURRE"]
 	if show_action:
 		b["action"] = [Vector2(w - 480, h - 230), 56.0, "ACTION"]
 	return b
@@ -155,6 +161,12 @@ func _press(btn: String, down: bool) -> void:
 		"jump":
 			if down:
 				jump_pressed = true
+		"grenade":
+			if down:
+				grenade_pressed = true
+		"decoy":
+			if down:
+				decoy_pressed = true
 		"pause":
 			if down:
 				pause_pressed.emit()
