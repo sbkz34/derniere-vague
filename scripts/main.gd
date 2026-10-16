@@ -69,6 +69,7 @@ func _ready() -> void:
 	touch.visible = false
 
 	menu = Menu.new()
+	menu.level = level
 	add_child(menu)
 	menu.play_pressed.connect(_start_game)
 	menu.resume_pressed.connect(_resume)
@@ -466,6 +467,12 @@ func _run_ui_test() -> void:
 	menu.show_lobby()
 	await _wait(0.5)
 	await _screenshot("lobby")
+	menu._show_weapon_info("faucon", false, 12)
+	await _wait(0.6)
+	await _screenshot("lobby_locked")
+	menu._show_weapon_info("vipere", true, 5)
+	await _wait(0.6)
+	await _screenshot("lobby_vipere")
 	G.input_mode = "touch"
 	G.input_mode_changed.emit("touch")
 	_start_game()

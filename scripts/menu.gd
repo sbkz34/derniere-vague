@@ -28,6 +28,16 @@ var _lobby_xp: ProgressBar
 var _lobby_xp_text: Label
 var _lobby_maps: HBoxContainer
 var _lobby_weapons: GridContainer
+var _weapon_preview: LobbyVisuals.WeaponPreview
+var _weapon_name: Label
+var _weapon_note: Label
+var _stat_bars := {}
+var _map_preview: LobbyVisuals.MapPreview
+var _map_plan: LobbyVisuals.MapPlan
+var _map_name: Label
+var _map_desc: Label
+## The level behind the menus (for the map plan), set by main.
+var level: Node
 var _continue: Button
 
 
@@ -182,58 +192,114 @@ func _build_over() -> Control:
 	return s
 
 
-## Lobby: player level, map and starting weapon (unlocked by level), then start.
+## Lobby: player level, the map (live view + plan) and the starting weapon (turning 3D
+## preview, stats, cards unlocked by level), then start.
 func _build_lobby() -> Control:
-	var s := _screen(0.6)
+	var s := _screen(0.65)
 	var cc := CenterContainer.new()
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	s.add_child(cc)
 	var panel := PanelContainer.new()
 	cc.add_child(panel)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
-	v.custom_minimum_size = Vector2(900, 0)
+	v.add_theme_constant_override("separation", 10)
 	panel.add_child(v)
-	_big_label(v, "PRÉPARATION", 52, Color(0.9, 0.9, 0.88))
-	var lv := HBoxContainer.new()
-	lv.add_theme_constant_override("separation", 18)
-	v.add_child(lv)
+
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 18)
+	v.add_child(top)
+	var title := _big_label(top, "PRÉPARATION", 40, Color(0.9, 0.9, 0.88))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_lobby_level = Label.new()
-	_lobby_level.add_theme_font_size_override("font_size", 34)
+	_lobby_level.add_theme_font_size_override("font_size", 28)
 	_lobby_level.add_theme_color_override("font_color", Color(1, 0.85, 0.35))
-	lv.add_child(_lobby_level)
+	top.add_child(_lobby_level)
 	_lobby_xp = ProgressBar.new()
-	_lobby_xp.custom_minimum_size = Vector2(420, 26)
+	_lobby_xp.custom_minimum_size = Vector2(300, 20)
 	_lobby_xp.show_percentage = false
 	_lobby_xp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.85, 0.15, 0.08)
-	fill.set_corner_radius_all(4)
-	var back := StyleBoxFlat.new()
-	back.bg_color = Color(0.15, 0.1, 0.1)
-	back.set_corner_radius_all(4)
-	_lobby_xp.add_theme_stylebox_override("fill", fill)
-	_lobby_xp.add_theme_stylebox_override("background", back)
-	lv.add_child(_lobby_xp)
+	_lobby_xp.add_theme_stylebox_override("fill", _flat(Color(0.85, 0.15, 0.08)))
+	_lobby_xp.add_theme_stylebox_override("background", _flat(Color(0.15, 0.1, 0.1)))
+	top.add_child(_lobby_xp)
 	_lobby_xp_text = Label.new()
-	_lobby_xp_text.add_theme_font_size_override("font_size", 22)
-	lv.add_child(_lobby_xp_text)
-	var map_title := Label.new()
-	map_title.text = "Carte"
-	map_title.add_theme_color_override("font_color", Color(0.85, 0.3, 0.25))
-	v.add_child(map_title)
+	_lobby_xp_text.add_theme_font_size_override("font_size", 18)
+	top.add_child(_lobby_xp_text)
+
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 24)
+	v.add_child(cols)
+
+	# Map column.
+	var mc := VBoxContainer.new()
+	mc.add_theme_constant_override("separation", 6)
+	cols.add_child(mc)
+	_section(mc, "CARTE")
+	_map_preview = LobbyVisuals.MapPreview.new(Vector2i(520, 150))
+	mc.add_child(_map_preview)
+	var map_row := HBoxContainer.new()
+	map_row.add_theme_constant_override("separation", 12)
+	mc.add_child(map_row)
+	_map_name = Label.new()
+	_map_name.add_theme_font_size_override("font_size", 24)
+	_map_name.add_theme_color_override("font_color", Color(1, 0.9, 0.8))
+	map_row.add_child(_map_name)
+	_map_desc = Label.new()
+	_map_desc.add_theme_font_size_override("font_size", 15)
+	_map_desc.add_theme_color_override("font_color", Color(0.75, 0.72, 0.7))
+	_map_desc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	map_row.add_child(_map_desc)
+	_map_plan = LobbyVisuals.MapPlan.new(Vector2(520, 228))
+	mc.add_child(_map_plan)
 	_lobby_maps = HBoxContainer.new()
-	_lobby_maps.add_theme_constant_override("separation", 12)
-	v.add_child(_lobby_maps)
-	var w_title := Label.new()
-	w_title.text = "Arme de départ"
-	w_title.add_theme_color_override("font_color", Color(0.85, 0.3, 0.25))
-	v.add_child(w_title)
+	_lobby_maps.add_theme_constant_override("separation", 8)
+	mc.add_child(_lobby_maps)
+
+	# Weapon column.
+	var wc := VBoxContainer.new()
+	wc.add_theme_constant_override("separation", 6)
+	cols.add_child(wc)
+	_section(wc, "ARME DE DÉPART")
+	_weapon_preview = LobbyVisuals.WeaponPreview.new(Vector2i(560, 170))
+	wc.add_child(_weapon_preview)
+	var name_row := HBoxContainer.new()
+	wc.add_child(name_row)
+	_weapon_name = Label.new()
+	_weapon_name.add_theme_font_size_override("font_size", 26)
+	_weapon_name.add_theme_color_override("font_color", Color(1, 0.9, 0.8))
+	_weapon_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_row.add_child(_weapon_name)
+	_weapon_note = Label.new()
+	_weapon_note.add_theme_font_size_override("font_size", 16)
+	_weapon_note.add_theme_color_override("font_color", Color(1, 0.55, 0.4))
+	name_row.add_child(_weapon_note)
+	var stats := GridContainer.new()
+	stats.columns = 4
+	stats.add_theme_constant_override("h_separation", 10)
+	stats.add_theme_constant_override("v_separation", 2)
+	wc.add_child(stats)
+	for pair in [["dmg", "Dégâts"], ["rate", "Cadence"], ["acc", "Précision"], ["mag", "Chargeur"]]:
+		var l := Label.new()
+		l.text = pair[1]
+		l.add_theme_font_size_override("font_size", 15)
+		l.custom_minimum_size = Vector2(80, 0)
+		stats.add_child(l)
+		var bar := ProgressBar.new()
+		bar.max_value = 1.0
+		bar.step = 0.01
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(170, 12)
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bar.add_theme_stylebox_override("fill", _flat(Color(0.9, 0.8, 0.6)))
+		bar.add_theme_stylebox_override("background", _flat(Color(0.18, 0.15, 0.14)))
+		stats.add_child(bar)
+		_stat_bars[pair[0]] = bar
 	_lobby_weapons = GridContainer.new()
-	_lobby_weapons.columns = 2
-	_lobby_weapons.add_theme_constant_override("h_separation", 12)
+	_lobby_weapons.columns = 4
+	_lobby_weapons.add_theme_constant_override("h_separation", 8)
 	_lobby_weapons.add_theme_constant_override("v_separation", 8)
-	v.add_child(_lobby_weapons)
+	wc.add_child(_lobby_weapons)
+
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 20)
@@ -244,14 +310,41 @@ func _build_lobby() -> Control:
 	return s
 
 
+func _flat(c: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(4)
+	return sb
+
+
+func _section(parent: Control, text: String) -> void:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 18)
+	l.add_theme_color_override("font_color", Color(0.9, 0.3, 0.25))
+	parent.add_child(l)
+
+
 func _small_button(parent: Control, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(440, 50)
-	b.add_theme_font_size_override("font_size", 24)
+	b.custom_minimum_size = Vector2(250, 40)
+	b.add_theme_font_size_override("font_size", 18)
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b
+
+
+func _show_weapon_info(id: String, unlocked: bool, need: int) -> void:
+	_weapon_preview.show_weapon(id)
+	_weapon_preview.modulate = Color(1, 1, 1) if unlocked else Color(0.25, 0.25, 0.25)
+	_weapon_name.text = G.WEAPONS[id].name
+	_weapon_note.text = "" if unlocked else "Débloquée au niveau %d" % need
+	var r := LobbyVisuals.ratings(id)
+	for k in _stat_bars:
+		var bar: ProgressBar = _stat_bars[k]
+		var tw := bar.create_tween()
+		tw.tween_property(bar, "value", float(r[k]), 0.25)
 
 
 func show_lobby() -> void:
@@ -264,31 +357,55 @@ func show_lobby() -> void:
 	_lobby_xp.max_value = hi
 	_lobby_xp.value = G.xp
 	_lobby_xp_text.text = "%d / %d XP" % [G.xp, hi]
+	_map_plan.level = level
+	_map_plan.queue_redraw()
+	_map_name.text = G.MAPS[G.map_id].name
+	_map_desc.text = G.MAPS[G.map_id].desc
 	for c in _lobby_maps.get_children():
 		c.queue_free()
 	for c in _lobby_weapons.get_children():
 		c.queue_free()
 	var map_group := ButtonGroup.new()
 	for id in G.MAPS:
-		var b := _small_button(_lobby_maps, G.MAPS[id].name, func(): G.map_id = id)
+		var b := _small_button(_lobby_maps, G.MAPS[id].name, func():
+			G.map_id = id
+			_map_name.text = G.MAPS[id].name
+			_map_desc.text = G.MAPS[id].desc)
 		b.toggle_mode = true
 		b.button_group = map_group
 		b.button_pressed = id == G.map_id
-		b.tooltip_text = G.MAPS[id].desc
 	var soon := _small_button(_lobby_maps, "Nouvelle carte — bientôt", func(): pass)
 	soon.disabled = true
 	var weapon_group := ButtonGroup.new()
 	for pair in G.START_WEAPONS:
 		var id: String = pair[0]
 		var need: int = pair[1]
-		var name: String = G.WEAPONS[id].name
 		var unlocked := lv >= need
-		var b := _small_button(_lobby_weapons, name if unlocked else "%s  (niveau %d)" % [name, need],
-			func(): G.start_weapon = id)
-		b.toggle_mode = true
-		b.button_group = weapon_group
-		b.disabled = not unlocked
-		b.button_pressed = id == G.start_weapon
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(134, 74)
+		b.add_theme_font_size_override("font_size", 15)
+		b.text = LobbyVisuals.short_name(id) if unlocked else "Niv. %d" % need
+		b.icon = LobbyVisuals.weapon_icon(b, id, Vector2i(240, 90))
+		b.expand_icon = true
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		if unlocked:
+			b.toggle_mode = true
+			b.button_group = weapon_group
+			b.button_pressed = id == G.start_weapon
+			b.pressed.connect(func():
+				G.start_weapon = id
+				_show_weapon_info(id, true, need))
+		else:
+			b.add_theme_color_override("icon_normal_color", Color(0.08, 0.08, 0.08))
+			b.add_theme_color_override("icon_hover_color", Color(0.15, 0.15, 0.15))
+			b.add_theme_color_override("icon_focus_color", Color(0.15, 0.15, 0.15))
+			b.add_theme_color_override("icon_pressed_color", Color(0.15, 0.15, 0.15))
+			b.add_theme_color_override("font_color", Color(1, 0.55, 0.4))
+			b.pressed.connect(func(): _show_weapon_info(id, false, need))
+		b.focus_entered.connect(func(): _show_weapon_info(id, unlocked, need))
+		_lobby_weapons.add_child(b)
+	_show_weapon_info(G.start_weapon, true, 1)
 	_lobby.visible = true
 	_focus(_lobby.find_child("Go", true, false))
 
