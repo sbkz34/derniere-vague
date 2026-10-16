@@ -494,3 +494,20 @@ write("power_on.wav", place(d, [(0.0, _thud(0.3, 300, 0.08), 2.0), (0.0, metal_t
 d = 0.5
 zap = (np.sign(np.sin(2 * np.pi * 120 * t(d))) * 0.4 + highpass(white(d), 3000)) * (rng.uniform(0, 1, len(t(d))) > 0.3) * np.exp(-t(d) * 3)
 write("zap.wav", zap)
+# Colosse: a deep, slow roar (low voices, rough noise), and a heavy ground smash.
+d = 2.2
+tt = t(d)
+contour = 85 + 45 * np.sin(np.pi * np.clip(tt / d * 1.1, 0, 1))
+roar = np.zeros_like(tt)
+for detune, gain in ((1.0, 1.0), (1.5, 0.5), (2.02, 0.35), (3.01, 0.2)):
+    f = contour * detune * (1 + 0.03 * np.sin(2 * np.pi * 7.0 * tt))
+    roar += np.sign(np.sin(2 * np.pi * np.cumsum(f) / SR)) * gain * 0.5 + np.sin(2 * np.pi * np.cumsum(f) / SR) * gain * 0.5
+roar = lowpass(roar, 1400) + lowpass(white(d), 700) * 0.5
+roar *= np.clip(tt / 0.15, 0, 1) * np.clip((d - tt) / 0.7, 0, 1)
+write("brute_roar.wav", roar)
+d = 0.9
+write("brute_smash.wav", place(d, [(0.0, _thud(0.6, 220, 0.12), 2.5), (0.0, lowpass(white(0.5), 1500) * env(0.5, 0.001, 0.12), 0.8),
+                                   (0.05, metal_tick(180, 0.1, 0.4), 0.6)]))
+# Crawler: a wet scraping drag.
+d = 0.7
+write("crawl.wav", lowpass(white(d), 900) * (0.5 + 0.5 * np.sin(2 * np.pi * 3.0 * t(d))) * np.clip((d - t(d)) / 0.3, 0, 1) * 0.8)

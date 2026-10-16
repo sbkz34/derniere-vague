@@ -135,14 +135,14 @@ func build(p_player: Player, p_director: Director) -> void:
 	br.anchor_bottom = 1.0
 	br.offset_left = -420
 	br.offset_right = -40
-	br.offset_top = -290
+	br.offset_top = -315
 	br.offset_bottom = -24
 	br.alignment = BoxContainer.ALIGNMENT_END
 	br.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_frame.add_child(br)
 	_popups = VBoxContainer.new()
 	_popups.alignment = BoxContainer.ALIGNMENT_END
-	_popups.custom_minimum_size = Vector2(0, 70)
+	_popups.custom_minimum_size = Vector2(0, 88)
 	br.add_child(_popups)
 	_points = _label(br, 44, Color(1, 0.88, 0.35), 8)
 	_points.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -222,12 +222,12 @@ func _layout(mode: String) -> void:
 		_br.anchor_top = 0.0
 		_br.anchor_bottom = 0.0
 		_br.offset_top = -40
-		_br.offset_bottom = 230
+		_br.offset_bottom = 255
 		_br.offset_right = -24
 	else:
 		_br.anchor_top = 1.0
 		_br.anchor_bottom = 1.0
-		_br.offset_top = -290
+		_br.offset_top = -315
 		_br.offset_bottom = -24
 		_br.offset_right = -40
 
@@ -242,8 +242,11 @@ func _on_points(points: int, delta: int) -> void:
 	var tw := l.create_tween()
 	tw.tween_property(l, "modulate:a", 0.0, 0.9).set_delay(0.3)
 	tw.tween_callback(l.queue_free)
-	if _popups.get_child_count() > 4:
-		_popups.get_child(0).queue_free()
+	# Two at most, so the stack never pushes the ammo off the screen.
+	while _popups.get_child_count() > 2:
+		var old := _popups.get_child(0)
+		_popups.remove_child(old)
+		old.queue_free()
 
 
 func _refresh_weapon() -> void:

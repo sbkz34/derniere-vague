@@ -17,7 +17,9 @@ var alive := true
 var outside := true
 var hp := 150.0
 var speed := 1.3
-var kind := "walk"   # walk, jog, run
+var kind := "walk"   # walk, jog, run, crawl
+## Legs blown off by an explosion: drags itself along the floor.
+var crawler := false
 var window: Barricade
 var slot := 0
 var director: Node
@@ -156,6 +158,8 @@ func _place() -> void:
 
 ## Where the player's aim assist and the bot aim (chest height).
 func aim_point() -> Vector3:
+	if crawler:
+		return global_position + Vector3(0, 0.35, 0) - global_basis.z * 0.45
 	return global_position + Vector3(0, 1.25, 0)
 
 
@@ -217,7 +221,35 @@ func _face(target: Vector3) -> void:
 
 
 func is_head_hit(p: Vector3) -> bool:
+	if crawler:
+		return to_local(p).z < -0.75
 	return p.y - global_position.y > HEAD_Y * model.scale.y
+
+
+## An explosion took the legs: slower, lower, weaker, and harder to hit.
+func make_crawler() -> void:
+	if crawler or not alive or outside:
+		return
+	crawler = true
+	kind = "crawl"
+	speed = randf_range(0.8, 1.0)
+	attack_range = 1.3
+	hit_range = 1.7
+	damage = 40.0
+	attack_windup = 0.6
+	attack_length = 1.4
+	_leg_l.visible = false
+	_leg_r.visible = false
+	for c in get_children():
+		var cs := c as CollisionShape3D
+		if cs:
+			var cap := cs.shape as CapsuleShape3D
+			cap.radius = 0.3
+			cap.height = 1.5
+			cs.rotation.x = PI / 2
+			cs.position = Vector3(0, 0.3, -0.4)
+	Fx.blood(get_parent(), global_position + Vector3(0, 0.5, 0), Vector3.UP, true)
+	G.play_at("crawl", global_position + Vector3(0, 0.3, 0), get_parent(), -2.0)
 
 
 ## Returns "kill", "hit" or "" (already dead).
@@ -235,14 +267,14 @@ func take_damage(amount: float, at: Vector3, dir: Vector3, head: bool, how: Stri
 			pts = 130
 		elif head:
 			pts = 100
-		if how != "bomb":
+		if how != "bomb" and how != "trap":
 			G.add_points(pts)
 		G.kills += 1
 		if head:
 			G.headshots += 1
 		_die(head, dir)
 		return "kill"
-	if how != "bomb":
+	if how != "bomb" and how != "trap":
 		G.add_points(10)
 	if head:
 		G.play_at("headshot", at, get_parent(), -6.0)
@@ -482,6 +514,18 @@ func _process(delta: float) -> void:
 				_arm_l.rotation = Vector3(1.45 + sin(_phase * 0.5) * 0.1, 0, 0.05)
 				_arm_r.rotation = Vector3(1.35 + cos(_phase * 0.5) * 0.1, 0, -0.05)
 				_torso.rotation.x = -0.12 if kind == "walk" else -0.25
+	if crawler:
+		# Lying on the belly, pulling forward with alternate arms.
+		var pull := sin(_phase * 1.4)
+		model.position.y = 0.0
+		_torso.position.y = 0.28
+		_torso.rotation.x = -1.42
+		_arm_l.rotation = Vector3(2.1 + pull * 0.45, 0, 0.25)
+		_arm_r.rotation = Vector3(2.1 - pull * 0.45, 0, -0.25)
+		_head.rotation.x = 1.1
+		if state == State.ATTACK:
+			var p := clampf(_attack_t / attack_windup, 0.0, 1.0)
+			_arm_r.rotation.x = 2.1 + 0.9 * sin(p * PI)
 	_torso.rotation.x -= _hit_kick * 0.6
 	_torso.rotation.z = sin(_phase * 0.5) * 0.06
 	_head.rotation.z = sin(_phase * 0.35) * 0.15

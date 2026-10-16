@@ -79,6 +79,9 @@ jobs:
           # Power gates the perks, grenades kill, decoys pull zombies.
           timeout 120 "$HOME/godot" --headless --path . -- --gadgettest 2>&1 | grep gadgettest | tee gadget.log
           grep -q "\[gadgettest\] OK" gadget.log
+          # Colosse, crawlers and the electric trap.
+          timeout 120 "$HOME/godot" --headless --path . -- --specialtest 2>&1 | grep specialtest | tee special.log
+          grep -q "\[specialtest\] OK" special.log
           # Switching weapons cancels a reload.
           timeout 60 "$HOME/godot" --headless --path . -- --swaptest 2>&1 | grep swaptest | tee swap.log
           grep -q "\[swaptest\] OK" swap.log

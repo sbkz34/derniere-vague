@@ -29,6 +29,9 @@ var dog_round := false
 var next_dog_round := 0
 var _last_kill_pos := Vector3.ZERO
 var _dog_rounds_done := 0
+## Every tenth round a Colosse joins in, some time after the round starts.
+var _brute_pending := false
+var _brute_t := 0.0
 
 
 func start() -> void:
@@ -36,6 +39,7 @@ func start() -> void:
 	intermission = 3.0
 	in_round = false
 	dog_round = false
+	_brute_pending = false
 	next_dog_round = randi_range(5, 6)
 
 
@@ -45,7 +49,10 @@ func start_at(next_round: int, p_next_dog: int, p_dogs_done: int) -> void:
 	intermission = 5.0
 	in_round = false
 	dog_round = false
+	_brute_pending = false
 	next_dog_round = maxi(p_next_dog, next_round)
+	if next_dog_round % 10 == 0:
+		next_dog_round += 1
 	_dog_rounds_done = p_dogs_done
 
 
@@ -57,7 +64,12 @@ func _process(delta: float) -> void:
 		if intermission <= 0.0:
 			_begin_round()
 		return
-	if to_spawn > 0 and alive < (_max_dogs() if dog_round else MAX_ALIVE):
+	if _brute_pending:
+		_brute_t -= delta
+		# Comes when its time is up, or once it is the only one left to come.
+		if _brute_t <= 0.0 or to_spawn <= 1:
+			_spawn_brute()
+	if to_spawn > (1 if _brute_pending else 0) and alive < (_max_dogs() if dog_round else MAX_ALIVE):
 		_spawn_t -= delta
 		if _spawn_t <= 0.0:
 			if dog_round:
@@ -78,6 +90,8 @@ func _begin_round() -> void:
 	dog_round = G.round_num == next_dog_round
 	if dog_round:
 		next_dog_round = G.round_num + randi_range(4, 6)
+		if next_dog_round % 10 == 0:
+			next_dog_round += 1
 		to_spawn = clampi(4 + G.round_num / 2, 6, 20)
 		_spawn_t = 4.0
 		level.set_storm(true)
@@ -89,6 +103,10 @@ func _begin_round() -> void:
 		return
 	to_spawn = G.zombie_count(G.round_num)
 	_spawn_t = 1.5
+	if is_brute_round(G.round_num):
+		_brute_pending = true
+		_brute_t = randf_range(12.0, 22.0)
+		to_spawn += 1
 	G.play("round_start", -2.0)
 	round_started.emit(G.round_num)
 
@@ -104,6 +122,44 @@ func _end_round() -> void:
 		_drop(_last_kill_pos, "ammo")
 	G.play("round_end", -2.0)
 	round_ended.emit(G.round_num)
+
+
+func is_brute_round(r: int) -> bool:
+	return r > 0 and r % 10 == 0
+
+
+func brute_health(r: int) -> float:
+	return maxf(5000.0, G.zombie_health(r) * 8.0)
+
+
+func _spawn_brute() -> void:
+	_brute_pending = false
+	var pos := _dog_spot()
+	var b := Brute.new()
+	b.setup_brute(self, player, pos, brute_health(G.round_num))
+	zombie_parent.add_child(b)
+	Fx.blast(zombie_parent, pos + Vector3(0, 1.4, 0), 2.4, Color(1.0, 0.55, 0.2))
+	G.play_at("thunder", pos + Vector3(0, 1, 0), zombie_parent, 0.0, 0.8)
+	G.play("brute_roar", 0.0)
+	G.say("LE COLOSSE EST LÀ", Color(1.0, 0.4, 0.15))
+	player.shake(0.4)
+	to_spawn -= 1
+	alive += 1
+
+
+## The Colosse always leaves a bonus behind.
+func on_brute_killed(b: Brute) -> void:
+	var kinds := ["ammo", "double", "insta", "carpenter"]
+	_drop(b.global_position, kinds.pick_random())
+	G.say("COLOSSE ABATTU", Color(1.0, 0.85, 0.4))
+
+
+## Explosions can tear the legs off the zombies they do not kill.
+func maybe_crawler(z: Zombie) -> void:
+	if z is Dog or z is Brute or z.crawler or z.outside or not z.alive:
+		return
+	if randf() < 0.55:
+		z.make_crawler()
 
 
 ## Dogs at the same time: 3 on the first dog round, one more each time, at most 6.
@@ -191,6 +247,12 @@ func respawn(z: Zombie) -> void:
 	z.alive = false
 	z.remove_from_group("zombies")
 	z.queue_free()
+	if z is Brute:
+		var nb := Brute.new()
+		nb.setup_brute(self, player, _dog_spot(), (z as Brute).max_hp)
+		nb.hp = hp
+		zombie_parent.add_child(nb)
+		return
 	if z is Dog:
 		var nd := Dog.new()
 		nd.setup_dog(self, player, _dog_spot(), hp)
@@ -201,7 +263,7 @@ func respawn(z: Zombie) -> void:
 		alive -= 1
 		return
 	var nz := Zombie.new()
-	nz.setup(self, player, w, _waiting_at(w), hp, kind)
+	nz.setup(self, player, w, _waiting_at(w), hp, "walk" if kind == "crawl" else kind)
 	zombie_parent.add_child(nz)
 
 

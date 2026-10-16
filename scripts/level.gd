@@ -25,6 +25,7 @@ var player_start := Vector3(0, 0.2, 2.0)
 var lights: Array[OmniLight3D] = []
 var _flicker: OmniLight3D
 var power_switch: PowerSwitch
+var trap: ZapTrap
 var _power_t := 0.0
 var _baking := false
 var env: Environment
@@ -436,6 +437,10 @@ func _buyables() -> void:
 	add_child(power_switch)
 	power_switch.build(Vector3(18.85, 1.4, 19.0), Vector3(-1, 0, 0), m_metal)
 	power_switch.switched.connect(_on_power)
+	# Electric trap across the Hall / Atelier doorway, switch on the hall wall beside it.
+	trap = ZapTrap.new()
+	add_child(trap)
+	trap.build(Vector3(6.84, 1.4, 2.5), Vector3(-1, 0, 0), Vector3(7, 0, -1.42), Vector3(7, 0, 1.42), doors[0], m_metal)
 	_apply_power_lights(false)
 
 

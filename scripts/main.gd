@@ -100,7 +100,7 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test:
 		G.autostart = false
 		_start_game()
 	else:
@@ -119,6 +119,8 @@ func _ready() -> void:
 		_run_swap_test()
 	if G.gadget_test:
 		_run_gadget_test()
+	if G.special_test:
+		_run_special_test()
 
 
 func _start_game() -> void:
@@ -143,7 +145,7 @@ func _start_game() -> void:
 
 
 func _testing() -> bool:
-	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test
+	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test
 
 
 # ------------------------------------------------------------------------------------------------
@@ -350,11 +352,11 @@ func _process(delta: float) -> void:
 		_status_t += delta
 		if _status_t > 10.0:
 			_status_t = 0.0
-			print("[test] t=%.0fs round=%d alive=%d to_spawn=%d kills=%d points=%d hp=%.0f fps=%d" % [_elapsed, G.round_num, director.alive, director.to_spawn, G.kills, G.points, player.hp, Engine.get_frames_per_second()])
+			print("[test] t=%.0fs round=%d alive=%d to_spawn=%d kills=%d points=%d hp=%.0f fps=%d ammo=%s" % [_elapsed, G.round_num, director.alive, director.to_spawn, G.kills, G.points, player.hp, Engine.get_frames_per_second(), ", ".join(player.inv.map(func(w): return "%s %d/%d" % [w.id, w.mag, w.reserve]))])
 			for z in get_tree().get_nodes_in_group("zombies"):
 				var zz := z as Zombie
 				if zz.window:
-					print("   zombie state=%s pos=%s outside=%s room=%s planks=%d" % [Zombie.State.keys()[zz.state], zz.global_position.snapped(Vector3.ONE * 0.1), zz.outside, zz.window.room, zz.window.planks])
+					print("   zombie %s state=%s pos=%s outside=%s room=%s planks=%d" % [zz.kind, Zombie.State.keys()[zz.state], zz.global_position.snapped(Vector3.ONE * 0.1), zz.outside, zz.window.room, zz.window.planks])
 				else:
 					print("   %s state=%s pos=%s" % [zz.kind, Zombie.State.keys()[zz.state], zz.global_position.snapped(Vector3.ONE * 0.1)])
 		_bot_economy()
@@ -371,6 +373,14 @@ func _bot_economy() -> void:
 	if G.points >= 1500 and not player.has_weapon("faucon"):
 		G.points -= 1400
 		player.give_weapon("faucon", 0)
+	# Out of ammo everywhere: buy it back (the bot cannot walk to the wall weapons).
+	var cw := player.current_weapon()
+	if not cw.is_empty() and int(cw.mag) + int(cw.reserve) == 0:
+		if G.points >= 1000:
+			G.points -= 1000
+			player.refill_all()
+		else:
+			player.swap_weapon()
 
 
 func _screenshot(tag: String) -> void:
@@ -758,4 +768,113 @@ func _run_gadget_test() -> void:
 	await _wait(3.0)
 	if is_instance_valid(target) and target.alive: problems.append("decoy blast did not kill")
 	print("[gadgettest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
+	get_tree().quit()
+
+
+func _count_powerups() -> int:
+	var n := 0
+	for c in zombies.get_children():
+		if c is PowerUp:
+			n += 1
+	return n
+
+
+## The Colosse resists insta-kill and the bomb, enrages at half health and always drops a bonus;
+## an explosion can turn a zombie into a crawler that can still be shot; the trap needs power
+## and an open door, costs 1000 and kills what walks through it.
+func _run_special_test() -> void:
+	director.set_process(false)
+	player.targetable = false
+	await _wait(0.5)
+	var problems: Array[String] = []
+	G.round_num = 10
+	if not director.is_brute_round(10) or director.is_brute_round(9): problems.append("brute rounds")
+	# Colosse.
+	director._spawn_brute()
+	await _wait(0.3)
+	var b: Brute = null
+	for c in zombies.get_children():
+		if c is Brute:
+			b = c
+	if b == null:
+		problems.append("no brute")
+	else:
+		b.global_position = Vector3(0, 0.05, -3)
+		b.reset_physics_interpolation()
+		_pose(Vector3(0, 0, 4), b.global_position + Vector3(0, 1.8, 0))
+		await _wait(1.0)
+		await _screenshot("colosse")
+		G.insta_kill_time = 5.0
+		b.take_damage(100.0, b.aim_point(), Vector3.FORWARD, false, "gun", "p9")
+		G.insta_kill_time = 0.0
+		if not b.alive: problems.append("insta-kill killed the brute")
+		director._apply_powerup("bomb", b.global_position)
+		if not b.alive: problems.append("bomb killed the brute")
+		b.take_damage(b.max_hp * 0.3, b.aim_point(), Vector3.FORWARD, false, "gun", "p9")
+		if not b.enraged or b.speed < 3.0: problems.append("no enrage (hp %.0f / %.0f)" % [b.hp, b.max_hp])
+		await _wait(0.6)
+		await _screenshot("colosse_enraged")
+		var head := player._fire_ray(player.global_position + Vector3(0, 1.62, 0), (b.global_position + Vector3(0, 2.6, 0) - player.global_position - Vector3(0, 1.62, 0)).normalized(), G.new_weapon("p9", 0))
+		if not head.hit: problems.append("could not shoot the brute's head")
+		var before := _count_powerups()
+		b.take_damage(b.hp + 1.0, b.aim_point(), Vector3.FORWARD, false, "gun", "p9")
+		await _wait(0.3)
+		if b.alive or _count_powerups() <= before: problems.append("no guaranteed drop")
+	await _wait(2.0)
+	for c in zombies.get_children():
+		if c is PowerUp:
+			c.queue_free()
+	# Crawler.
+	var z := _test_zombie(Vector3(1.0, 0.05, -2.0), 5000.0)
+	await _wait(0.3)
+	z.make_crawler()
+	await _wait(0.8)
+	_pose(Vector3(1.0, 0, 2.5), z.global_position + Vector3(0, 0.3, 0))
+	await _wait(0.3)
+	await _screenshot("crawler")
+	if not z.crawler or z.kind != "crawl": problems.append("not a crawler")
+	var origin := player.global_position + Vector3(0, 1.62, 0)
+	var shot := player._fire_ray(origin, (z.aim_point() - origin).normalized(), G.new_weapon("p9", 0))
+	if not shot.hit: problems.append("crawler cannot be shot")
+	# Explosions turn some zombies into crawlers.
+	var made := 0
+	for i in 20:
+		var zz := _test_zombie(Vector3(-4.0 + (i % 5) * 0.5, 0.05, -5.0 + (i / 5) * 0.5), 100000.0)
+		await get_tree().physics_frame
+		director.maybe_crawler(zz)
+		if zz.crawler:
+			made += 1
+	if made < 3 or made > 18: problems.append("crawler chance %d/20" % made)
+	for c in zombies.get_children():
+		if c is Zombie:
+			c.queue_free()
+	await _wait(0.3)
+	# Trap.
+	var trap: ZapTrap = level.trap
+	G.points = 5000
+	trap.interact(player)
+	if trap.is_active() or G.points != 5000: problems.append("trap without power")
+	level.power_switch.turn_on(true)
+	trap.interact(player)
+	if trap.is_active(): problems.append("trap with the door closed")
+	level.doors[0].open_free()
+	await level.nav_ready
+	trap.interact(player)
+	if not trap.is_active() or G.points != 4000: problems.append("trap not bought (points %d)" % G.points)
+	var victim := _test_zombie(Vector3(7.0, 0.05, 0.3), 5000.0)
+	var bystander := _test_zombie(Vector3(4.5, 0.05, 3.5), 5000.0)
+	var pts := G.points
+	await _wait(0.7)
+	_pose(Vector3(3.5, 0, 0), Vector3(7, 1.0, 0))
+	await _wait(0.15)
+	await _screenshot("trap")
+	if is_instance_valid(victim) and victim.alive: problems.append("trap did not kill")
+	if not bystander.alive: problems.append("trap killed outside its zone")
+	if G.points != pts: problems.append("trap kill gave points")
+	trap.active_t = 0.01
+	await _wait(0.2)
+	if trap.is_active() or trap.cool_t <= 0.0: problems.append("trap did not stop")
+	trap.interact(player)
+	if trap.is_active(): problems.append("trap ignored the cooldown")
+	print("[specialtest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
 	get_tree().quit()
