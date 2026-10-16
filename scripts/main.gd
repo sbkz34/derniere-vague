@@ -99,7 +99,7 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test:
 		G.autostart = false
 		_start_game()
 	else:
@@ -114,6 +114,8 @@ func _ready() -> void:
 		_run_dog_test()
 	if G.save_test:
 		_run_save_test()
+	if G.swap_test:
+		_run_swap_test()
 
 
 func _start_game() -> void:
@@ -138,7 +140,7 @@ func _start_game() -> void:
 
 
 func _testing() -> bool:
-	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test
+	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test
 
 
 # ------------------------------------------------------------------------------------------------
@@ -614,4 +616,24 @@ func _run_save_test() -> void:
 	if G.round_num != 7 or director.in_round: problems.append("round %d" % G.round_num)
 	G.delete_save()
 	print("[savetest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
+	get_tree().quit()
+
+
+## Switching weapons during a reload cancels it and switches at once.
+func _run_swap_test() -> void:
+	director.set_process(false)
+	await _wait(0.3)
+	player.give_weapon("vipere", 0, false)
+	await _wait(0.6)
+	var w := player.current_weapon()
+	w.mag = 3
+	player.start_reload()
+	await _wait(0.3)
+	var reloading := player._reload_t > 0.0
+	player.swap_weapon()
+	await _wait(0.1)
+	var ok: bool = reloading and player.current_weapon().id == "p9" and player._reload_t <= 0.0 and int(w.mag) == 3
+	await _wait(1.0)
+	ok = ok and int(w.mag) == 3
+	print("[swaptest] %s (reloading=%s now=%s mag=%d)" % ["OK" if ok else "FAILED", reloading, player.current_weapon().id, int(w.mag)])
 	get_tree().quit()

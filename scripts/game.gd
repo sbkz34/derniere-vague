@@ -113,6 +113,7 @@ var view_test := false
 var window_test := false
 var dog_test := false
 var save_test := false
+var swap_test := false
 var save_stage := 0
 var autostart := false
 var start_points := 500
@@ -183,6 +184,7 @@ func _ready() -> void:
 	window_test = args.has("--windowtest")
 	dog_test = args.has("--dogtest")
 	save_test = args.has("--savetest")
+	swap_test = args.has("--swaptest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)

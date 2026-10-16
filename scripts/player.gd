@@ -192,8 +192,9 @@ func _equip(animate: bool) -> void:
 	weapons_changed.emit()
 
 
+## Switching weapons cancels a reload in progress (the magazine stays as it was).
 func swap_weapon() -> void:
-	if inv.size() < 2 or _busy():
+	if inv.size() < 2 or _swap_t > 0.0 or _knife_t > 0.0 or _drink_t > 0.0 or downed:
 		return
 	cur = (cur + 1) % inv.size()
 	_equip(true)

@@ -76,6 +76,9 @@ jobs:
           # Save, reload from the save, compare.
           timeout 120 "$HOME/godot" --headless --path . -- --savetest 2>&1 | grep savetest | tee save.log
           grep -q "\[savetest\] OK" save.log
+          # Switching weapons cancels a reload.
+          timeout 60 "$HOME/godot" --headless --path . -- --swaptest 2>&1 | grep swaptest | tee swap.log
+          grep -q "\[swaptest\] OK" swap.log
 
       - name: Publish the release
         env:
