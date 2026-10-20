@@ -70,6 +70,9 @@ static func weapon_icon(holder: Node, weapon_id: String, size: Vector2i) -> Text
 
 ## Short name for a card: the last word ("Mitraillette Vipère" -> "Vipère").
 static func short_name(weapon_id: String) -> String:
+	var fixed := {"hache": "Hache", "sabre": "Sabre", "uzi": "Mini Uzi", "rpg": "Roquettes"}
+	if fixed.has(weapon_id):
+		return fixed[weapon_id]
 	var parts: PackedStringArray = String(G.WEAPONS[weapon_id].name).split(" ")
 	return parts[parts.size() - 1]
 
@@ -80,15 +83,16 @@ static func ratings(weapon_id: String) -> Dictionary:
 	var mine := {}
 	for id in G.WEAPONS:
 		var w: Dictionary = G.WEAPONS[id]
-		if w.kind == "wonder":
-			continue
 		var r := {"dmg": float(w.dmg) * float(w.pellets), "rate": 1.0 / float(w.rof),
 			"acc": 1.0 / (float(w.spread) + float(w.ads_spread) + 0.5), "mag": float(w.mag),
 			"mob": float(w.speed)}
-		for k in r:
-			best[k] = maxf(best[k], r[k])
 		if id == weapon_id:
 			mine = r
+		# The wonder weapon and melee weapons do not set the scale for the guns.
+		if w.kind == "wonder" or w.get("melee", false):
+			continue
+		for k in r:
+			best[k] = maxf(best[k], r[k])
 	var out := {}
 	for k in best:
 		out[k] = clampf(sqrt(mine.get(k, 0.0) / maxf(best[k], 0.001)), 0.05, 1.0)

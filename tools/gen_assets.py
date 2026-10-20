@@ -543,3 +543,28 @@ save("camo_obsidienne.png", np.clip(base + veins[..., None] * np.array([0.65, 0.
 
 # Challenge complete: a short bright rising arpeggio.
 write("challenge.wav", tone_seq([659.3, 830.6, 987.8, 1318.5], 0.09, bell, 0.25, gap=0.0, tail=0.8) * 0.8)
+
+# ----------------------------------------------------------------------------------------------
+# Melee swings, blade hits and the rocket launcher.
+# ----------------------------------------------------------------------------------------------
+def whoosh(d, f_from, f_to, gain=1.0):
+    """Air swish: band of noise whose centre sweeps from f_from to f_to, loudest mid-swing."""
+    tt = t(d)
+    x = white(d)
+    out = np.zeros_like(x)
+    steps = 12
+    for i in range(steps):
+        a, b = int(len(x) * i / steps), int(len(x) * (i + 1) / steps)
+        fc = f_from + (f_to - f_from) * i / (steps - 1)
+        seg = highpass(lowpass(x, fc * 1.6), fc * 0.6)
+        out[a:b] = seg[a:b]
+    return out * np.sin(np.pi * np.clip(tt / d, 0, 1)) ** 1.5 * gain
+
+
+write("axe_swing.wav", whoosh(0.42, 500, 180, 1.4))
+write("sabre_swing.wav", place(0.3, [(0.0, whoosh(0.22, 2400, 900, 1.2), 1.0), (0.0, metal_tick(3200, 0.05, 0.15), 0.25)]))
+write("blade_hit.wav", place(0.35, [(0.0, _thud(0.25, 500, 0.05), 1.6), (0.0, lowpass(white(0.12), 2500) * env(0.12, 0.001, 0.03), 0.9)]))
+# Rocket: a hard thump then the hiss of the motor.
+d = 1.2
+hiss = highpass(white(d), 1500) * np.clip(t(d) / 0.05, 0, 1) * np.exp(-t(d) * 2.2) * 0.6
+write("rocket_fire.wav", place(d, [(0.0, _thud(0.3, 200, 0.08), 2.2), (0.02, hiss, 1.0), (0.0, lowpass(white(0.2), 800) * env(0.2, 0.001, 0.06), 1.2)]))

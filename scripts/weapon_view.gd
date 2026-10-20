@@ -38,6 +38,22 @@ var _mark_i := 0
 var _skin: StandardMaterial3D
 var _sleeve: StandardMaterial3D
 var _glove: StandardMaterial3D
+# Ultimate akimbo: a second gun in the left hand.
+var _gun2: Node3D
+var _flash2: MeshInstance3D
+var _flash_two := false
+var _akimbo := false
+var _flash_mat: StandardMaterial3D
+# Melee weapons: swing animation (right or left hand).
+var _melee := false
+var _heavy := false
+var _swing_on := false
+var _swing_left := false
+var _swing_t := 0.0
+var _swing_len := 0.5
+var _swing_wf := 0.3
+
+const ONE_HAND := ["pistol", "revolver", "uzi"]
 
 
 func _ready() -> void:
@@ -67,6 +83,12 @@ func _ready() -> void:
 	_flash.material_override = fm
 	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_flash.visible = false
+	_flash_mat = fm
+	_flash2 = MeshInstance3D.new()
+	_flash2.mesh = q
+	_flash2.material_override = fm
+	_flash2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_flash2.visible = false
 	_flash_light = OmniLight3D.new()
 	_flash_light.light_color = Color(1.0, 0.75, 0.4)
 	_flash_light.light_energy = 2.5
@@ -130,13 +152,29 @@ func _build(w: Dictionary) -> void:
 	if _gun:
 		_gun.queue_free()
 		_gun = null
+	if _gun2:
+		_gun2.queue_free()
+		_gun2 = null
 	if _flash.get_parent():
 		_flash.get_parent().remove_child(_flash)
+	if _flash2.get_parent():
+		_flash2.get_parent().remove_child(_flash2)
+	_swing_on = false
 	if w.is_empty():
 		return
 	var sh := GunShapes.shape(w.id)
 	_kind = sh.kind
-	_gun = GunShapes.build_model(w.id, G.gun_mats_for(int(w.up), G.camo_for(w.id)))
+	_akimbo = G.is_akimbo(w)
+	_melee = G.is_melee(w)
+	_heavy = w.id == "hache"
+	# Ultimate weapons: red muzzle flash to go with the red tracers.
+	var red := int(w.up) >= G.MAX_TIER
+	_flash_mat.albedo_color = Color(1.0, 0.25, 0.15, 0.9) if red else Color(1.0, 0.75, 0.3, 0.9)
+	_flash_light.light_color = Color(1.0, 0.25, 0.15) if red else Color(1.0, 0.75, 0.4)
+	var mats := G.gun_mats_for(int(w.up), G.camo_for(w.id))
+	# Melee weapons are long: a bit smaller in the hands so the view stays clear.
+	var model_scale := 0.8 if _melee else 1.0
+	_gun = GunShapes.build_model(w.id, mats, model_scale)
 	_gun_holder.add_child(_gun)
 	_muzzle = _gun.get_meta("muzzle")
 	_top = _gun.get_meta("top")
@@ -151,17 +189,20 @@ func _build(w: Dictionary) -> void:
 	_gun.add_child(_flash)
 	_flash.position = _muzzle + Vector3(0, 0, -0.06)
 	# Right hand on the grip, forearm going down and back; left hand forward on the gun
-	# (or under the right hand for pistols).
-	var right := Node3D.new()
-	_gun.add_child(right)
-	_box(right, Vector3(0.0, -0.03, 0.02), Vector3(0.07, 0.085, 0.09), _glove)
-	var r_arm := _box(right, Vector3(0.03, -0.12, 0.13), Vector3(0.075, 0.075, 0.24), _skin)
-	r_arm.rotation.x = 0.6
-	var r_sleeve := _box(right, Vector3(0.05, -0.22, 0.27), Vector3(0.095, 0.095, 0.22), _sleeve)
-	r_sleeve.rotation.x = 0.6
+	# (or under the right hand for pistols). Akimbo and melee: one hand per weapon.
+	_hand(_gun, false)
 	var length: float = _gun.get_meta("length")
-	if _kind in ["pistol", "revolver"]:
-		_box(right, Vector3(-0.045, -0.05, 0.03), Vector3(0.06, 0.07, 0.08), _glove)
+	if _akimbo:
+		_gun2 = GunShapes.build_model(w.id, mats, model_scale)
+		_gun_holder.add_child(_gun2)
+		_gun2.position = Vector3(-2.0 * hip_pos().x, 0, 0)
+		_hand(_gun2, true)
+		_gun2.add_child(_flash2)
+		_flash2.position = _muzzle + Vector3(0, 0, -0.06)
+	elif _melee:
+		pass
+	elif _kind in ONE_HAND:
+		_box(_gun, Vector3(-0.045, -0.05, 0.03), Vector3(0.06, 0.07, 0.08), _glove)
 	else:
 		var left := Node3D.new()
 		_gun.add_child(left)
@@ -174,6 +215,48 @@ func _build(w: Dictionary) -> void:
 		l_arm.rotation.x = 0.5
 		var l_sleeve := _box(left, Vector3(-0.08, -0.16, 0.3), Vector3(0.095, 0.095, 0.22), _sleeve)
 		l_sleeve.rotation.x = 0.5
+
+
+## Hand on the grip with the forearm going down and back (mirrored for the left hand).
+func _hand(gun: Node3D, mirror: bool) -> void:
+	var sx := -1.0 if mirror else 1.0
+	var hand := Node3D.new()
+	gun.add_child(hand)
+	_box(hand, Vector3(0.0, -0.03, 0.02), Vector3(0.07, 0.085, 0.09), _glove)
+	var arm := _box(hand, Vector3(0.03 * sx, -0.12, 0.13), Vector3(0.075, 0.075, 0.24), _skin)
+	arm.rotation.x = 0.6
+	var sleeve := _box(hand, Vector3(0.05 * sx, -0.22, 0.27), Vector3(0.095, 0.095, 0.22), _sleeve)
+	sleeve.rotation.x = 0.6
+
+
+## Melee: starts a swing with the right weapon, or the left one when akimbo alternates.
+func swing(left: bool, length: float, windup: float) -> void:
+	_swing_on = true
+	_swing_left = left and _gun2 != null
+	_swing_t = 0.0
+	_swing_len = maxf(0.2, length)
+	_swing_wf = clampf(windup / _swing_len, 0.1, 0.7)
+
+
+## Offsets [position, rotation] of a swing at phase p: the axe chops down, the sabre slashes
+## across from right to left.
+func _swing_pose(p: float) -> Array:
+	var wind := _ramp(p, 0.0, _swing_wf)
+	var strike := _ramp(p, _swing_wf, _swing_wf + 0.18)
+	var back := 1.0 - _ramp(p, 0.55, 1.0)
+	if _heavy:
+		return [Vector3(-0.1 * strike, 0.1 * wind - 0.14 * strike, -0.14 * strike) * back,
+				Vector3(0.6 * wind - 2.4 * strike, 0.25 * strike, -0.25 * strike) * back]
+	return [Vector3(0.06 * wind - 0.34 * strike, 0.04 * wind, -0.1 * strike) * back,
+			Vector3(-0.5 * strike, 0.8 * wind - 2.2 * strike, 0.9 * strike) * back]
+
+
+## Launcher: the warhead shows only while a rocket is loaded.
+func set_loaded(on: bool) -> void:
+	if _kind == "launcher" and _anim != "reload" and _roles.has("mag"):
+		var n: Node3D = _roles.mag
+		if is_instance_valid(n):
+			n.visible = on
 
 
 func set_weapon(w: Dictionary, animate := true) -> void:
@@ -250,6 +333,9 @@ func _reload_pose(p: float) -> Array:
 	while _mark_i < _marks.size() and p >= _marks[_mark_i][0]:
 		G.play(_marks[_mark_i][1], -3.0, randf_range(0.95, 1.05))
 		_mark_i += 1
+	if _akimbo:
+		# Both guns go down out of view and come back loaded.
+		return [Vector3(0, -0.32, 0.08) * hold, Vector3(-0.6, 0, 0) * hold]
 	match _kind:
 		"shotgun":
 			rot.z += 0.35 * hold
@@ -312,17 +398,22 @@ func set_bottle_color(c: Color) -> void:
 	_bottle_mat.emission = c
 
 
-func shot(kick: float) -> void:
+func shot(kick: float, guns := 1) -> void:
+	_flash_two = guns >= 2
 	_kick = min(_kick + 0.03 + kick * 0.01, 0.12)
 	_kick_rot = min(_kick_rot + 0.04 + kick * 0.02, 0.35)
 	_flash_t = 0.05
 	_flash.rotation.z = randf() * TAU
 	# Smaller, dimmer flash when aiming: it sits right in front of the eye.
 	_flash.scale = Vector3.ONE * randf_range(0.8, 1.3) * lerpf(1.0, 0.3, ads)
+	_flash2.rotation.z = randf() * TAU
+	_flash2.scale = _flash.scale
 	_flash_light.light_energy = lerpf(2.5, 0.8, ads)
 
 
-func muzzle_global() -> Vector3:
+func muzzle_global(left := false) -> Vector3:
+	if left and _gun2:
+		return _gun2.to_global(_muzzle)
 	if _gun:
 		return _gun.to_global(_muzzle)
 	return global_position
@@ -334,7 +425,13 @@ func add_sway(look_delta: Vector2) -> void:
 
 
 func hip_pos() -> Vector3:
-	if _kind in ["pistol", "revolver"]:
+	if _melee:
+		return Vector3(0.28, -0.32, -0.5)
+	if _akimbo:
+		return Vector3(0.21, -0.17, -0.5)
+	if _kind == "launcher":
+		return Vector3(0.22, -0.19, -0.55)
+	if _kind in ONE_HAND:
 		return Vector3(0.17, -0.2, -0.5)
 	if _kind == "wonder":
 		return Vector3(0.2, -0.25, -0.46)
@@ -344,9 +441,11 @@ func hip_pos() -> Vector3:
 ## Aiming: the gun is centred with its top edge just below the crosshair, so the target stays
 ## visible (the sniper shows its scope instead).
 func ads_pos() -> Vector3:
+	if _melee or _akimbo:
+		return hip_pos()
 	if _kind == "sniper":
 		return Vector3(0.0, -0.13, -0.24)
-	var z := -0.42 if _kind in ["pistol", "revolver"] else -0.3
+	var z := -0.42 if _kind in ONE_HAND else -0.3
 	return Vector3(0.0, -(_top + 0.018), z)
 
 
@@ -414,6 +513,26 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 				_build(_pending_weapon)
 				_pending_set = false
 			_anim = ""
+	if _melee and _gun:
+		# Upright on the side, the blade turned towards the middle so its profile shows.
+		var rest := Vector3(1.15, -0.1, 1.5708)
+		var off_r := [Vector3.ZERO, Vector3.ZERO]
+		var off_l := [Vector3.ZERO, Vector3.ZERO]
+		if _swing_on:
+			_swing_t += delta
+			var sp := clampf(_swing_t / _swing_len, 0.0, 1.0)
+			var o := _swing_pose(sp)
+			if _swing_left:
+				off_l = [Vector3(-o[0].x, o[0].y, o[0].z), Vector3(o[1].x, -o[1].y, -o[1].z)]
+			else:
+				off_r = o
+			if sp >= 1.0:
+				_swing_on = false
+		_gun.position = off_r[0]
+		_gun.rotation = rest + off_r[1]
+		if _gun2:
+			_gun2.position = Vector3(-2.0 * hip_pos().x, 0, 0) + off_l[0]
+			_gun2.rotation = Vector3(rest.x, -rest.y, -rest.z) + off_l[1]
 	_gun_holder.position = _gun_holder.position.lerp(base, clamp(delta * 18.0, 0.0, 1.0))
 	_gun_holder.rotation = _gun_holder.rotation.lerp(rot, clamp(delta * 14.0, 0.0, 1.0))
 	_gun_holder.visible = not hidden_by_scope
@@ -421,8 +540,10 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		_flash.visible = true
+		_flash2.visible = _flash_two and _gun2 != null
 		_flash_light.visible = true
 		_flash_light.global_position = muzzle_global()
 	else:
 		_flash.visible = false
+		_flash2.visible = false
 		_flash_light.visible = false

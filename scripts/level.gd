@@ -411,6 +411,8 @@ func _buyables() -> void:
 		[Vector3(9.5, 1.5, -5.84), Vector3(0, 0, 1), "vipere"],
 		[Vector3(-6.84, 1.5, 9.5), Vector3(1, 0, 0), "faucon"],
 		[Vector3(9.5, 1.5, 7.16), Vector3(0, 0, 1), "ouragan"],
+		[Vector3(3.5, 1.5, 6.84), Vector3(0, 0, -1), "uzi"],
+		[Vector3(18.84, 1.5, 4.5), Vector3(-1, 0, 0), "hache"],
 	]
 	for d in walls:
 		var wb := WallBuy.new()

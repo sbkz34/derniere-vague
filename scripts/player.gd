@@ -51,6 +51,12 @@ var _invuln := 0.0   # short grace after a hit, so several bites at once cannot 
 var _yaw := 0.0
 var _pitch := 0.0
 var _fire_cd := 0.0
+## Akimbo: LT tightens the view and the spread a little (no sights with a gun in each hand).
+var _aim2 := 0.0
+## Melee: the blow lands a moment after the swing starts.
+var _melee_t := 0.0
+var _melee_w: Dictionary = {}
+var _melee_left := false
 var _reload_t := 0.0
 var _swap_t := 0.0
 var _knife_t := 0.0
@@ -368,7 +374,7 @@ func _look(dx_deg: float, dy_deg: float) -> void:
 
 
 func _ads_amount() -> float:
-	return view.ads
+	return maxf(view.ads, _aim2)
 
 
 func _busy() -> bool:
@@ -396,6 +402,8 @@ func _process(delta: float) -> void:
 	var target_fov := BASE_FOV
 	if not w.is_empty():
 		target_fov = lerp(BASE_FOV, float(G.WEAPONS[w.id].ads_fov), view.ads)
+		target_fov = lerpf(target_fov, 62.0, _aim2)
+		view.set_loaded(int(w.mag) > 0)
 	cam.fov = lerp(cam.fov, target_fov, clamp(delta * 14.0, 0.0, 1.0))
 	_shake = max(0.0, _shake - delta)
 	var shake_off := Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake * 0.03
@@ -539,7 +547,17 @@ func start_reload() -> void:
 func _update_weapon(delta: float) -> void:
 	var w := current_weapon()
 	var ads_in := _ads_input() and not _busy() and not w.is_empty()
-	view.ads = move_toward(view.ads, 1.0 if ads_in else 0.0, delta * 6.0)
+	var melee := G.is_melee(w)
+	if melee or G.is_akimbo(w):
+		view.ads = move_toward(view.ads, 0.0, delta * 6.0)
+		_aim2 = move_toward(_aim2, 1.0 if ads_in and not melee else 0.0, delta * 6.0)
+	else:
+		view.ads = move_toward(view.ads, 1.0 if ads_in else 0.0, delta * 6.0)
+		_aim2 = move_toward(_aim2, 0.0, delta * 6.0)
+	if _melee_t > 0.0:
+		_melee_t -= delta
+		if _melee_t <= 0.0:
+			_melee_hit()
 	if Input.is_action_just_pressed("reload") or (touch and touch.visible and touch.reload_pressed):
 		start_reload()
 	if touch and touch.visible:
@@ -569,6 +587,11 @@ func _update_weapon(delta: float) -> void:
 		_semi_ready = true
 	if w.is_empty() or _busy() or _sprinting and not firing:
 		return
+	if melee:
+		if firing and _fire_cd <= 0.0:
+			_sprinting = false
+			_swing(w)
+		return
 	if firing and _fire_cd <= 0.0:
 		var auto: bool = G.WEAPONS[w.id].auto
 		if not auto and not _semi_ready:
@@ -588,12 +611,16 @@ func _update_weapon(delta: float) -> void:
 
 func _shoot(w: Dictionary) -> void:
 	var stats: Dictionary = G.WEAPONS[w.id]
-	w.mag -= 1
+	var akimbo := G.is_akimbo(w)
+	# Akimbo: the trigger fires both guns (one round each) when there are two left.
+	var guns := 2 if akimbo and int(w.mag) >= 2 else 1
+	w.mag -= guns
 	var rof: float = G.stat(w, "rof")
 	if has_perk("double_detente"):
 		rof *= 0.75
 	_fire_cd = rof
 	var spread: float = lerp(float(G.stat(w, "spread")), float(G.stat(w, "ads_spread")), view.ads)
+	spread *= lerpf(1.0, 0.5, _aim2)
 	var moving := Vector2(velocity.x, velocity.z).length() > 1.0
 	if moving:
 		spread *= 1.4
@@ -605,29 +632,109 @@ func _shoot(w: Dictionary) -> void:
 	var any_hit := false
 	var any_kill := false
 	var any_head := false
-	for i in pellets:
-		var r := deg_to_rad(spread) * sqrt(randf())
-		var a := randf() * TAU
-		var dir := (-basis.z + basis.x * tan(r) * cos(a) + basis.y * tan(r) * sin(a)).normalized()
-		var res := _fire_ray(origin, dir, w)
-		any_hit = any_hit or res.hit
-		any_kill = any_kill or res.kill
-		any_head = any_head or res.head
+	var red := int(w.up) >= G.MAX_TIER
+	for g in guns:
+		var muzzle := view.muzzle_global(g == 1)
+		for i in pellets:
+			var r := deg_to_rad(spread) * sqrt(randf())
+			var a := randf() * TAU
+			var dir := (-basis.z + basis.x * tan(r) * cos(a) + basis.y * tan(r) * sin(a)).normalized()
+			if stats.kind == "launcher":
+				_fire_rocket(w, muzzle, dir)
+				continue
+			var res := _fire_ray(origin, dir, w)
+			any_hit = any_hit or res.hit
+			any_kill = any_kill or res.kill
+			any_head = any_head or res.head
+			# Ultimate weapons fire red tracers (a few per shotgun blast).
+			if red and i < 3 and stats.kind != "wonder":
+				Fx.tracer(get_parent(), muzzle, res.end)
 	if any_hit:
 		hit_confirmed.emit(any_kill, any_head)
 		G.play("killmarker" if any_kill else "hitmarker", -4.0, randf_range(0.97, 1.03))
 	# Recoil.
-	var kick: float = stats.kick * (0.5 if view.ads > 0.5 else 1.0)
+	var kick: float = stats.kick * (0.5 if view.ads > 0.5 or _aim2 > 0.5 else 1.0)
 	_pitch = clamp(_pitch + deg_to_rad(kick * 0.35), deg_to_rad(-85), deg_to_rad(85))
 	_yaw += deg_to_rad(randf_range(-0.15, 0.15) * kick)
-	view.shot(kick)
-	G.play(stats.sound, -3.0, randf_range(0.95, 1.05) * (1.0 - 0.07 * int(w.up)))
+	view.shot(kick, guns)
+	G.play(stats.sound, -3.0, randf_range(0.95, 1.05) * (1.0 - 0.07 * int(w.up)) * (1.2 if w.id == "uzi" else 1.0))
+	if guns == 2:
+		G.play(stats.sound, -6.0, randf_range(0.9, 1.0) * (1.2 if w.id == "uzi" else 1.0))
 	G.vibrate(0.25, 0.1 + 0.05 * kick, 0.08)
 	weapons_changed.emit()
 
 
+func _fire_rocket(w: Dictionary, muzzle: Vector3, dir: Vector3) -> void:
+	var r := Rocket.new()
+	r.setup(w.duplicate(), dir * 34.0, self, director)
+	get_parent().add_child(r)
+	r.global_position = muzzle + dir * 0.2
+	r.look_at(r.global_position + dir, Vector3.UP if absf(dir.y) < 0.98 else Vector3.RIGHT)
+	shake(0.15)
+
+
+## Starts a melee swing; the blow itself lands in _melee_hit after the wind-up.
+func _swing(w: Dictionary) -> void:
+	var stats: Dictionary = G.WEAPONS[w.id]
+	var akimbo := G.is_akimbo(w)
+	var rof: float = G.stat(w, "rof")
+	if has_perk("double_detente"):
+		rof *= 0.75
+	if akimbo:
+		rof *= 0.65
+		_melee_left = not _melee_left
+	else:
+		_melee_left = false
+	_fire_cd = rof
+	var windup: float = float(stats.windup) * (0.8 if akimbo else 1.0)
+	_melee_t = windup
+	_melee_w = w
+	view.swing(_melee_left, minf(rof, 0.9), windup)
+	G.play(stats.sound, -2.0, randf_range(0.92, 1.08))
+
+
+func _melee_hit() -> void:
+	var w := _melee_w
+	if w.is_empty() or downed or not has_weapon(w.id):
+		return
+	var stats: Dictionary = G.WEAPONS[w.id]
+	var fwd := -cam.global_basis.z
+	var targets: Array = []
+	for z in get_tree().get_nodes_in_group("zombies"):
+		var zz := z as Zombie
+		if zz == null or not zz.alive:
+			continue
+		var to := zz.aim_point() - cam.global_position
+		var flat := Vector3(to.x, 0, to.z)
+		var d := flat.length()
+		if d > float(stats.range) or absf(to.y) > 2.0:
+			continue
+		if d > 0.6 and Vector3(fwd.x, 0, fwd.z).normalized().dot(flat.normalized()) < 0.45:
+			continue
+		if not _line_of_sight(zz.aim_point()):
+			continue
+		targets.append([d, zz])
+	targets.sort_custom(func(a, b): return a[0] < b[0])
+	var any_kill := false
+	var hits := 0
+	for t in targets:
+		if hits >= int(stats.cleave):
+			break
+		var zz: Zombie = t[1]
+		var res := zz.take_damage(float(G.stat(w, "dmg")), zz.aim_point(), fwd, false, "melee", w.id)
+		any_kill = any_kill or res == "kill"
+		hits += 1
+		if int(w.up) >= G.MAX_TIER:
+			Fx.blast(get_parent(), zz.aim_point(), 0.35, Color(1.0, 0.15, 0.1))
+	if hits > 0:
+		hit_confirmed.emit(any_kill, false)
+		G.play("blade_hit", -1.0, randf_range(0.9, 1.1))
+		G.play("killmarker" if any_kill else "hitmarker", -4.0)
+		shake(0.12 if w.id == "hache" else 0.05)
+
+
 func _fire_ray(origin: Vector3, dir: Vector3, w: Dictionary) -> Dictionary:
-	var out := {"hit": false, "kill": false, "head": false}
+	var out := {"hit": false, "kill": false, "head": false, "end": origin + dir * 90.0}
 	var space := get_world_3d().direct_space_state
 	var exclude: Array[RID] = [get_rid()]
 	var pierce: int = G.stat(w, "pierce")
@@ -660,6 +767,7 @@ func _fire_ray(origin: Vector3, dir: Vector3, w: Dictionary) -> Dictionary:
 		else:
 			Fx.impact(get_parent(), hit.position, hit.normal)
 			break
+	out.end = end_point
 	if is_wonder:
 		_wonder_blast(end_point, w)
 		Fx.beam(get_parent(), view.muzzle_global(), end_point, _wonder_color(w))

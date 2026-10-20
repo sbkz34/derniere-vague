@@ -21,7 +21,7 @@ const WEAPONS := {
 	"p9": {"name": "Pistolet P9", "up_name": "Crocs d'Acier", "kind": "pistol", "auto": false,
 		"dmg": 40, "hs": 3.0, "rof": 0.16, "mag": 8, "reserve": 64, "reload": 1.4,
 		"spread": 1.6, "ads_spread": 0.3, "pellets": 1, "pierce": 0, "sound": "pistol",
-		"kick": 1.2, "ads_fov": 60.0, "speed": 1.0, "price": 0},
+		"kick": 1.2, "ads_fov": 60.0, "speed": 1.0, "price": 0, "akimbo": true},
 	"k14": {"name": "Carabine K14", "up_name": "K14 Éclipse", "kind": "rifle", "auto": false,
 		"dmg": 120, "hs": 2.5, "rof": 0.2, "mag": 8, "reserve": 96, "reload": 2.0,
 		"spread": 2.0, "ads_spread": 0.15, "pellets": 1, "pierce": 1, "sound": "carbine",
@@ -53,20 +53,39 @@ const WEAPONS := {
 	"machoire": {"name": "Double canon Mâchoire", "up_name": "Mâchoires de l'Enfer",
 		"kind": "shotgun", "auto": false, "dmg": 100, "hs": 1.5, "rof": 0.25, "mag": 2,
 		"reserve": 60, "reload": 2.4, "spread": 7.0, "ads_spread": 5.0, "pellets": 10, "pierce": 0,
-		"sound": "shotgun", "kick": 7.0, "ads_fov": 62.0, "speed": 0.95, "price": 0},
+		"sound": "shotgun", "kick": 7.0, "ads_fov": 62.0, "speed": 0.95, "price": 0, "akimbo": true},
 	"taureau": {"name": "Revolver Taureau", "up_name": "Minotaure", "kind": "pistol",
 		"auto": false, "dmg": 320, "hs": 3.0, "rof": 0.4, "mag": 6, "reserve": 48, "reload": 2.6,
 		"spread": 1.8, "ads_spread": 0.2, "pellets": 1, "pierce": 1, "sound": "revolver",
-		"kick": 4.0, "ads_fov": 55.0, "speed": 1.0, "price": 0},
+		"kick": 4.0, "ads_fov": 55.0, "speed": 1.0, "price": 0, "akimbo": true},
 	"desint": {"name": "Désintégrateur", "up_name": "Annihilateur", "kind": "wonder",
 		"auto": false, "dmg": 1500, "hs": 1.0, "rof": 0.35, "mag": 8, "reserve": 64, "reload": 2.8,
 		"spread": 0.5, "ads_spread": 0.0, "pellets": 1, "pierce": 0, "sound": "energy",
 		"kick": 2.5, "ads_fov": 58.0, "speed": 1.0, "price": 0, "splash": 3.0,
 		"splash_dmg": 900},
+	"uzi": {"name": "Mini Uzi", "up_name": "Essaim", "kind": "smg", "auto": true,
+		"dmg": 45, "hs": 2.5, "rof": 0.05, "mag": 32, "reserve": 224, "reload": 1.7,
+		"spread": 3.4, "ads_spread": 1.3, "pellets": 1, "pierce": 0, "sound": "smg",
+		"kick": 0.6, "ads_fov": 60.0, "speed": 1.08, "price": 1000, "akimbo": true},
+	"rpg": {"name": "Lance-roquettes Tonnerre", "up_name": "Fin du Monde", "kind": "launcher",
+		"auto": false, "dmg": 600, "hs": 1.0, "rof": 0.6, "mag": 1, "reserve": 10, "reload": 2.6,
+		"spread": 0.8, "ads_spread": 0.1, "pellets": 1, "pierce": 0, "sound": "rocket_fire",
+		"kick": 5.0, "ads_fov": 55.0, "speed": 0.88, "price": 0, "splash": 4.5, "splash_dmg": 1400},
+	# Melee: no ammo; one swing hits up to `cleave` zombies within `range` in front.
+	"hache": {"name": "Hache de guerre", "up_name": "Fendeuse d'Âmes", "kind": "melee",
+		"auto": true, "dmg": 700, "hs": 1.0, "rof": 1.05, "mag": 0, "reserve": 0, "reload": 0.1,
+		"spread": 0.0, "ads_spread": 0.0, "pellets": 1, "pierce": 0, "sound": "axe_swing",
+		"kick": 0.0, "ads_fov": 75.0, "speed": 0.95, "price": 1500, "melee": true, "range": 2.6,
+		"cleave": 3, "windup": 0.3, "akimbo": true},
+	"sabre": {"name": "Sabre", "up_name": "Lame du Crépuscule", "kind": "melee",
+		"auto": true, "dmg": 450, "hs": 1.0, "rof": 0.45, "mag": 0, "reserve": 0, "reload": 0.1,
+		"spread": 0.0, "ads_spread": 0.0, "pellets": 1, "pierce": 0, "sound": "sabre_swing",
+		"kick": 0.0, "ads_fov": 75.0, "speed": 1.1, "price": 0, "melee": true, "range": 2.4,
+		"cleave": 2, "windup": 0.12, "akimbo": true},
 }
 ## "leurre" is not a weapon: three decoys for the LB slot.
 const BOX_POOL := ["leurre", "titan", "aiguille", "machoire", "taureau", "desint", "faucon", "ouragan",
-		"vipere", "grele", "k14", "desint", "titan", "machoire"]
+		"vipere", "grele", "k14", "desint", "titan", "machoire", "sabre", "rpg", "sabre", "rpg"]
 
 # ------------------------------------------------------------------------------------------------
 # Perks (original names). Colours are used by machines and HUD icons.
@@ -121,6 +140,7 @@ var swap_test := false
 var gadget_test := false
 var special_test := false
 var progress_test := false
+var weapon_test := false
 var save_stage := 0
 var autostart := false
 var start_points := 500
@@ -152,8 +172,8 @@ const MAPS := {
 	"bunker": {"name": "Le Bunker", "desc": "Quatre salles, huit fenêtres, une forge."},
 }
 ## Starting weapons and the level that unlocks each.
-const START_WEAPONS := [["p9", 1], ["k14", 3], ["vipere", 5], ["grele", 8], ["faucon", 12],
-		["taureau", 16], ["ouragan", 20]]
+const START_WEAPONS := [["p9", 1], ["k14", 3], ["vipere", 5], ["uzi", 7], ["grele", 8],
+		["hache", 10], ["faucon", 12], ["sabre", 14], ["taureau", 16], ["ouragan", 20], ["rpg", 25]]
 var xp := 0
 var start_weapon := "p9"
 var map_id := "bunker"
@@ -198,6 +218,7 @@ func _ready() -> void:
 	gadget_test = args.has("--gadgettest")
 	special_test = args.has("--specialtest")
 	progress_test = args.has("--progresstest")
+	weapon_test = args.has("--weapontest")
 	for a in args:
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
@@ -533,7 +554,7 @@ const CHALLENGES := [
 	{"name": "Tombeur de Colosse", "stat": "brute_kills", "desc": "Abattre %d Colosse", "goals": [1, 5, 15], "xp": [800, 2000, 5000]},
 	{"name": "Artificier", "stat": "grenade_kills", "desc": "%d éliminations à l'explosif", "goals": [25, 100, 400], "xp": [300, 1000, 2500]},
 	{"name": "Électricien", "stat": "trap_kills", "desc": "%d éliminations avec le piège", "goals": [25, 100, 300], "xp": [300, 800, 2000]},
-	{"name": "Boucher", "stat": "knife_kills", "desc": "%d éliminations au couteau", "goals": [25, 100, 400], "xp": [300, 1000, 2500]},
+	{"name": "Boucher", "stat": "knife_kills", "desc": "%d éliminations au corps à corps", "goals": [25, 100, 400], "xp": [300, 1000, 2500]},
 	{"name": "Forgeron", "stat": "upgrades", "desc": "Améliorer %d fois une arme à la Forge", "goals": [3, 15, 50], "xp": [300, 1000, 2500]},
 	{"name": "Arme ultime", "stat": "ultimes", "desc": "Porter %d armes au niveau Ultime", "goals": [1, 5, 20], "xp": [500, 1500, 4000]},
 	{"name": "Sans jambes", "stat": "crawler_kills", "desc": "Achever %d rampants", "goals": [10, 50, 200], "xp": [200, 700, 2000]},
@@ -601,23 +622,22 @@ func record_kill(z: Node, how: String, weapon_id: String, head: bool) -> void:
 	elif z is Zombie and (z as Zombie).crawler:
 		stat_add("crawler_kills")
 	match how:
-		"grenade":
+		"grenade", "rocket":
 			stat_add("grenade_kills")
 		"trap":
 			stat_add("trap_kills")
-		"knife":
+		"knife", "melee":
 			stat_add("knife_kills")
-		"gun":
-			if weapon_id != "" and WEAPONS.has(weapon_id):
-				var before := int(weapon_kills.get(weapon_id, 0))
-				weapon_kills[weapon_id] = before + 1
-				for c in CAMOS:
-					if int(c[2]) > 0 and before < int(c[2]) and before + 1 >= int(c[2]):
-						# A new camouflage goes straight on the weapon.
-						camo_choice[weapon_id] = c[0]
-						play("challenge", -4.0, 1.2)
-						camo_unlocked.emit("CAMOUFLAGE %s : %s" % [str(c[1]).to_upper(), WEAPONS[weapon_id].name])
-						save_settings()
+	if how in ["gun", "melee", "rocket"] and weapon_id != "" and WEAPONS.has(weapon_id):
+		var before := int(weapon_kills.get(weapon_id, 0))
+		weapon_kills[weapon_id] = before + 1
+		for c in CAMOS:
+			if int(c[2]) > 0 and before < int(c[2]) and before + 1 >= int(c[2]):
+				# A new camouflage goes straight on the weapon.
+				camo_choice[weapon_id] = c[0]
+				play("challenge", -4.0, 1.2)
+				camo_unlocked.emit("CAMOUFLAGE %s : %s" % [str(c[1]).to_upper(), WEAPONS[weapon_id].name])
+				save_settings()
 
 
 func camo_need(camo: String) -> int:
@@ -813,9 +833,9 @@ func stat(w: Dictionary, key: String) -> Variant:
 		"dmg", "splash_dmg":
 			return v * TIER_DMG[tier]
 		"mag":
-			if w.id == "machoire":
-				return 2 + 2 * tier
-			return int(ceil(v * TIER_MAG[tier]))
+			var m := 2 + 2 * tier if w.id == "machoire" else int(ceil(v * TIER_MAG[tier]))
+			# Ultimate akimbo: one magazine per gun.
+			return m * 2 if is_akimbo(w) else m
 		"reserve":
 			return int(v * TIER_RESERVE[tier])
 		"rof":
@@ -833,7 +853,18 @@ func weapon_name(w: Dictionary) -> String:
 		return WEAPONS[w.id].name
 	if tier == 1:
 		return WEAPONS[w.id].up_name
+	if is_akimbo(w):
+		return "%s — %s ×2" % [WEAPONS[w.id].up_name, TIER_NAMES[tier]]
 	return "%s — %s" % [WEAPONS[w.id].up_name, TIER_NAMES[tier]]
+
+
+## Ultimate pistols, Mâchoire, Mini Uzi and melee weapons come in pairs.
+func is_akimbo(w: Dictionary) -> bool:
+	return not w.is_empty() and int(w.up) >= MAX_TIER and bool(WEAPONS[w.id].get("akimbo", false))
+
+
+func is_melee(w: Dictionary) -> bool:
+	return not w.is_empty() and bool(WEAPONS[w.id].get("melee", false))
 
 
 func tier_color(tier: int) -> Color:

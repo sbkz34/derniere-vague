@@ -100,7 +100,7 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test or G.weapon_test:
 		G.autostart = false
 		_start_game()
 	else:
@@ -123,6 +123,8 @@ func _ready() -> void:
 		_run_special_test()
 	if G.progress_test:
 		_run_progress_test()
+	if G.weapon_test:
+		_run_weapon_test()
 
 
 func _start_game() -> void:
@@ -147,7 +149,7 @@ func _start_game() -> void:
 
 
 func _testing() -> bool:
-	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test
+	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test or G.weapon_test
 
 
 # ------------------------------------------------------------------------------------------------
@@ -377,7 +379,7 @@ func _bot_economy() -> void:
 		player.give_weapon("faucon", 0)
 	# Out of ammo everywhere: buy it back (the bot cannot walk to the wall weapons).
 	var cw := player.current_weapon()
-	if not cw.is_empty() and int(cw.mag) + int(cw.reserve) == 0:
+	if not cw.is_empty() and not G.is_melee(cw) and int(cw.mag) + int(cw.reserve) == 0:
 		if G.points >= 1000:
 			G.points -= 1000
 			player.refill_all()
@@ -979,4 +981,152 @@ func _run_progress_test() -> void:
 	G.xp = xp0
 	G.save_settings()
 	print("[progresstest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
+	get_tree().quit()
+
+
+func _clear_zombies() -> void:
+	for c in zombies.get_children():
+		if c is Zombie or c is PowerUp:
+			c.queue_free()
+	await _wait(0.2)
+
+
+func _dead_count(list: Array) -> int:
+	var n := 0
+	for z in list:
+		if not is_instance_valid(z) or not (z as Zombie).alive:
+			n += 1
+	return n
+
+
+## New weapons: axe and sabre (cleave, no ammo), rocket launcher (splash, reload), Mini Uzi;
+## ultimate tier: akimbo pairs, LT zoom instead of sights, red tracers.
+func _run_weapon_test() -> void:
+	director.set_process(false)
+	player.targetable = false
+	await _wait(0.5)
+	var problems: Array[String] = []
+	for id in ["hache", "sabre", "rpg", "uzi"]:
+		if not G.WEAPONS.has(id): problems.append("missing " + id)
+		var listed := false
+		for pair in G.START_WEAPONS:
+			listed = listed or pair[0] == id
+		if not listed: problems.append(id + " not a start weapon")
+	if not G.BOX_POOL.has("sabre") or not G.BOX_POOL.has("rpg"): problems.append("box pool")
+	var walls := []
+	for c in level.get_children():
+		if c is WallBuy:
+			walls.append(c.weapon_id)
+	if not walls.has("hache") or not walls.has("uzi"): problems.append("wall buys %s" % str(walls))
+	# Axe: one chop, three zombies in front; the one behind is spared.
+	_pose(Vector3(0, 0, 3), Vector3(0, 1.2, -3))
+	player.give_weapon("hache", 0, false)
+	await _wait(0.6)
+	await _screenshot("hache")
+	var front: Array = []
+	for x in [-0.7, 0.0, 0.7]:
+		front.append(_test_zombie(Vector3(x, 0.05, 1.5), 600.0))
+	var behind := _test_zombie(Vector3(0, 0.05, 4.6), 600.0)
+	await _wait(0.3)
+	player._swing(player.current_weapon())
+	await _wait(0.33)
+	await _screenshot("hache_swing")
+	await _wait(0.4)
+	if _dead_count(front) != 3: problems.append("axe killed %d/3" % _dead_count(front))
+	if not behind.alive: problems.append("axe hit behind")
+	if player.current_weapon().mag != 0 or player.current_weapon().reserve != 0: problems.append("axe ammo")
+	await _clear_zombies()
+	# Sabre: faster, two at a time.
+	player.give_weapon("sabre", 0, false)
+	await _wait(0.6)
+	if float(G.WEAPONS.sabre.rof) >= float(G.WEAPONS.hache.rof): problems.append("sabre not faster")
+	front.clear()
+	for x in [-0.7, 0.0, 0.7]:
+		front.append(_test_zombie(Vector3(x, 0.05, 1.5), 400.0))
+	await _wait(0.3)
+	player._swing(player.current_weapon())
+	await _wait(0.4)
+	if _dead_count(front) != 2: problems.append("sabre killed %d/2" % _dead_count(front))
+	await _clear_zombies()
+	# Rocket launcher: a group 8 m away, one rocket.
+	player.give_weapon("rpg", 0, false)
+	await _wait(0.7)
+	await _screenshot("rpg")
+	front.clear()
+	for x in [-1.0, 0.0, 1.0]:
+		front.append(_test_zombie(Vector3(x, 0.05, -5.0), 500.0))
+	await _wait(0.3)
+	_pose(Vector3(0, 0, 3), Vector3(0, 1.2, -5))
+	await _wait(0.1)
+	var hp0 := player.hp
+	player._shoot(player.current_weapon())
+	await _wait(0.12)
+	await _screenshot("rocket")
+	await _wait(0.1)
+	await _screenshot("rocket_blast")
+	await _wait(0.6)
+	if _dead_count(front) != 3: problems.append("rocket killed %d/3" % _dead_count(front))
+	if player.hp < hp0: problems.append("rocket hurt the player at 8 m")
+	if player.current_weapon().mag != 0: problems.append("rocket mag")
+	player.start_reload()
+	await _wait(3.0)
+	if player.current_weapon().mag != 1: problems.append("rocket reload")
+	await _clear_zombies()
+	# Mini Uzi.
+	player.give_weapon("uzi", 0, false)
+	await _wait(0.6)
+	var m0: int = player.current_weapon().mag
+	player._shoot(player.current_weapon())
+	if player.current_weapon().mag != m0 - 1: problems.append("uzi mag")
+	# Ultimate P9: akimbo, both guns fire, red tracers.
+	player.give_weapon("p9", 3, false)
+	await _wait(0.6)
+	var w := player.current_weapon()
+	if not G.is_akimbo(w) or player.view._gun2 == null: problems.append("p9 ultimate not akimbo")
+	if int(G.stat(w, "mag")) != 2 * int(ceil(8 * G.TIER_MAG[3])): problems.append("akimbo mag %d" % int(G.stat(w, "mag")))
+	if G.is_akimbo(G.new_weapon("faucon", 3)) or G.is_akimbo(G.new_weapon("p9", 2)): problems.append("akimbo on the wrong weapons")
+	if int(G.stat(G.new_weapon("machoire", 3), "mag")) != 16: problems.append("machoire akimbo mag")
+	_pose(Vector3(0, 0, 3), Vector3(0, 1.4, -6))
+	await _wait(0.2)
+	var m1: int = w.mag
+	player._shoot(w)
+	var tracers := 0
+	for c in player.get_parent().get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh == Fx._tracer_mesh:
+			tracers += 1
+	if w.mag != m1 - 2: problems.append("akimbo used %d rounds" % (m1 - int(w.mag)))
+	if tracers < 2: problems.append("tracers %d" % tracers)
+	await _screenshot("p9_akimbo_fire")
+	# LT with akimbo: zoom without sights.
+	player.debug_ads = true
+	await _wait(0.6)
+	if player._aim2 < 0.9 or player.view.ads > 0.1 or player.cam.fov > 66.0: problems.append("akimbo LT (aim %.2f ads %.2f fov %.0f)" % [player._aim2, player.view.ads, player.cam.fov])
+	await _screenshot("p9_akimbo_lt")
+	player.debug_ads = false
+	# Ultimate melee: a weapon in each hand, swings alternate.
+	player.give_weapon("sabre", 3, false)
+	await _wait(0.6)
+	if player.view._gun2 == null: problems.append("sabre akimbo")
+	player._swing(player.current_weapon())
+	var first := player._melee_left
+	await _wait(0.5)
+	player._swing(player.current_weapon())
+	if player._melee_left == first: problems.append("swings do not alternate")
+	await _wait(0.12)
+	await _screenshot("sabre_akimbo")
+	player.give_weapon("uzi", 3, false)
+	await _wait(0.6)
+	player._shoot(player.current_weapon())
+	await _screenshot("uzi_akimbo")
+	player.give_weapon("hache", 3, false)
+	await _wait(0.6)
+	await _screenshot("hache_akimbo")
+	# Wall drawings.
+	_pose(Vector3(3.5, 0, 4.2), Vector3(3.5, 1.5, 6.84))
+	await _wait(0.3)
+	await _screenshot("wall_uzi")
+	_pose(Vector3(16.3, 0, 4.5), Vector3(18.84, 1.5, 4.5))
+	await _wait(0.3)
+	await _screenshot("wall_hache")
+	print("[weapontest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
 	get_tree().quit()

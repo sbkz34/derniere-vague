@@ -5,6 +5,9 @@ extends RefCounted
 static var _blood_mat: StandardMaterial3D
 static var _dust_mat: StandardMaterial3D
 static var _cube: BoxMesh
+static var _tracer_mat: StandardMaterial3D
+static var _tracer_mesh: BoxMesh
+static var _spark_mat: StandardMaterial3D
 
 
 static func _mats() -> void:
@@ -117,3 +120,41 @@ static func blast(parent: Node, pos: Vector3, radius: float, color: Color) -> vo
 	tw.parallel().tween_property(m, "albedo_color:a", 0.0, 0.35)
 	tw.parallel().tween_property(light, "light_energy", 0.0, 0.35)
 	tw.tween_callback(mi.queue_free)
+
+
+## A red tracer streaking from the muzzle to where the bullet stopped (ultimate weapons).
+static func tracer(parent: Node, from: Vector3, to: Vector3) -> void:
+	if parent == null or not parent.is_inside_tree():
+		return
+	if _tracer_mat == null:
+		_tracer_mat = StandardMaterial3D.new()
+		_tracer_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_tracer_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_tracer_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_tracer_mat.albedo_color = Color(1.0, 0.12, 0.06, 1.0)
+		_tracer_mesh = BoxMesh.new()
+		_tracer_mesh.size = Vector3(0.018, 0.018, 1.0)
+		_spark_mat = StandardMaterial3D.new()
+		_spark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_spark_mat.albedo_color = Color(1.0, 0.2, 0.1)
+	var d := to - from
+	var dist := d.length()
+	if dist < 0.5:
+		return
+	var seg := minf(2.2, dist * 0.6)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _tracer_mesh
+	mi.material_override = _tracer_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+	var dir := d / dist
+	var up := Vector3.UP if absf(dir.y) < 0.98 else Vector3.RIGHT
+	var basis := Basis.looking_at(dir, up) * Basis.from_scale(Vector3(1, 1, seg))
+	var start := from + dir * seg * 0.5
+	var finish := to - dir * seg * 0.5
+	mi.global_transform = Transform3D(basis, start)
+	var tw := mi.create_tween()
+	tw.tween_property(mi, "global_position", finish, maxf(0.03, (dist - seg) / 260.0))
+	tw.tween_callback(mi.queue_free)
+	# A red spark where it lands.
+	_burst(parent, to - dir * 0.05, -dir, _spark_mat, 5, 2.5, 0.25, 0.5, 6.0)

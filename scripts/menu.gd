@@ -778,7 +778,7 @@ func _build_armory() -> Control:
 	cols.add_theme_constant_override("separation", 24)
 	v.add_child(cols)
 	_armory_grid = GridContainer.new()
-	_armory_grid.columns = 3
+	_armory_grid.columns = 4
 	_armory_grid.add_theme_constant_override("h_separation", 8)
 	_armory_grid.add_theme_constant_override("v_separation", 8)
 	cols.add_child(_armory_grid)
@@ -812,7 +812,7 @@ func show_armory() -> void:
 	var group := ButtonGroup.new()
 	for id in G.WEAPONS:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(150, 78)
+		b.custom_minimum_size = Vector2(128, 70)
 		b.add_theme_font_size_override("font_size", 14)
 		b.text = "%s — %d" % [LobbyVisuals.short_name(id), int(G.weapon_kills.get(id, 0))]
 		b.icon = LobbyVisuals.weapon_icon(b, id, Vector2i(240, 90))

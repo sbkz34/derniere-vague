@@ -58,6 +58,8 @@ func ammo_price(player: Node) -> int:
 func get_hint(player: Node) -> String:
 	var name: String = G.WEAPONS[weapon_id].name
 	if player.has_weapon(weapon_id):
+		if G.WEAPONS[weapon_id].get("melee", false):
+			return "%s : déjà en main" % name
 		if player.ammo_full(weapon_id):
 			return "Munitions pleines"
 		return "%s acheter des munitions %s" % [use_text(), price_text(ammo_price(player))]

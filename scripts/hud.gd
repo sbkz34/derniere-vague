@@ -273,6 +273,10 @@ func _refresh_weapon() -> void:
 		return
 	_weapon.text = G.weapon_name(w)
 	_weapon.label_settings.font_color = G.tier_color(int(w.up))
+	if G.is_melee(w):
+		_ammo.text = "Corps à corps"
+		_ammo.label_settings.font_color = Color.WHITE
+		return
 	_ammo.text = "%d / %d" % [w.mag, w.reserve]
 	var low: bool = w.mag <= int(G.stat(w, "mag")) / 4
 	_ammo.label_settings.font_color = Color(1, 0.35, 0.3) if low else Color.WHITE
@@ -359,7 +363,7 @@ func _process(delta: float) -> void:
 	# Low ammo / reload reminder.
 	var w := player.current_weapon()
 	_reload_tip.text = ""
-	if not w.is_empty() and w.mag <= int(G.stat(w, "mag")) / 4:
+	if not w.is_empty() and not G.is_melee(w) and w.mag <= int(G.stat(w, "mag")) / 4:
 		if w.mag == 0 and w.reserve == 0:
 			_reload_tip.text = "PLUS DE MUNITIONS"
 		elif player._reload_t <= 0.0:

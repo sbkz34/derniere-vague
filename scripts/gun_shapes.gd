@@ -6,7 +6,7 @@ extends RefCounted
 const KIND_OF := {
 	"p9": "pistol", "taureau": "revolver", "vipere": "smg", "ouragan": "smg2", "k14": "rifle",
 	"faucon": "ar", "grele": "shotgun", "machoire": "double", "titan": "lmg", "aiguille": "sniper",
-	"desint": "wonder",
+	"desint": "wonder", "uzi": "uzi", "rpg": "launcher", "hache": "axe", "sabre": "blade",
 }
 
 
@@ -121,6 +121,47 @@ static func shape(weapon_id: String) -> Dictionary:
 				_r(0.25, 0.11, 0.17, 0.05, 0.0, "glow", "mag"),
 			]
 			grip = Vector2(0.15, -0.07); muzzle = Vector2(0.65, 0.03); depth = 0.07
+		"uzi":
+			parts = [
+				_r(0.12, 0.03, 0.22, 0.065, 0.0, "dark"),
+				_r(0.26, 0.035, 0.07, 0.025, 0.0, "metal"),
+				_r(0.08, -0.04, 0.045, 0.09, -0.1, "dark"),
+				_r(0.072, -0.115, 0.035, 0.08, -0.1, "metal", "mag"),
+				_r(0.14, 0.07, 0.08, 0.015, 0.0, "metal", "bolt"),
+				_r(0.0, 0.025, 0.05, 0.03, 0.0, "metal"),
+			]
+			grip = Vector2(0.08, -0.04); muzzle = Vector2(0.3, 0.035); depth = 0.035
+		"launcher":
+			parts = [
+				_r(0.35, 0.06, 0.95, 0.09, 0.0, "metal"),
+				_r(0.4, 0.06, 0.3, 0.11, 0.0, "wood"),
+				_r(0.86, 0.06, 0.08, 0.12, 0.0, "dark"),
+				_r(-0.12, 0.06, 0.06, 0.12, 0.0, "dark"),
+				_r(0.97, 0.06, 0.14, 0.075, 0.0, "glow", "mag"),
+				_r(1.07, 0.06, 0.07, 0.04, 0.0, "glow", "mag"),
+				_r(0.3, -0.04, 0.045, 0.1, -0.15, "wood"),
+				_r(0.52, -0.03, 0.04, 0.08, 0.0, "wood"),
+				_r(0.42, 0.13, 0.07, 0.04, 0.0, "dark"),
+			]
+			grip = Vector2(0.3, -0.04); muzzle = Vector2(0.92, 0.06); depth = 0.1
+		"axe":
+			parts = [
+				_r(0.25, 0.0, 0.62, 0.035, 0.0, "wood"),
+				_r(-0.06, 0.0, 0.04, 0.05, 0.0, "dark"),
+				_r(0.52, 0.06, 0.1, 0.16, 0.0, "metal"),
+				_r(0.52, 0.17, 0.22, 0.06, 0.0, "metal"),
+				_r(0.52, -0.05, 0.06, 0.06, 0.0, "dark"),
+			]
+			grip = Vector2(0.0, 0.0); muzzle = Vector2(0.55, 0.18); depth = 0.035
+		"blade":
+			parts = [
+				_r(0.03, 0.0, 0.13, 0.035, 0.0, "dark"),
+				_r(-0.045, 0.0, 0.03, 0.045, 0.0, "metal"),
+				_r(0.105, 0.0, 0.025, 0.11, 0.0, "metal"),
+				_r(0.37, 0.005, 0.5, 0.032, 0.0, "metal"),
+				_r(0.76, 0.02, 0.3, 0.026, 0.08, "metal"),
+			]
+			grip = Vector2(0.02, 0.0); muzzle = Vector2(0.9, 0.03); depth = 0.02
 	return {"parts": parts, "grip": grip, "muzzle": muzzle, "depth": depth, "kind": kind}
 
 
