@@ -88,6 +88,13 @@ jobs:
           # Axe, sabre, rocket launcher, Mini Uzi, ultimate akimbo and red tracers.
           timeout 120 "$HOME/godot" --headless --path . -- --weapontest 2>&1 | grep weapontest | tee weapon.log
           grep -q "\[weapontest\] OK" weapon.log
+          # The Village: lanterns, chapel door, extraction; and a bot game there.
+          timeout 180 "$HOME/godot" --headless --path . -- --villagetest 2>&1 | grep villagetest | tee village.log
+          grep -q "\[villagetest\] OK" village.log
+          timeout 300 "$HOME/godot" --headless --fixed-fps 60 --path . -- --bot --god --rounds=6 --map=village 2>&1 \
+            | grep -E "\[test\] reached|SCRIPT ERROR" | tee vbot.log
+          grep -q "reached round 7" vbot.log
+          ! grep -q "SCRIPT ERROR" vbot.log
           # Switching weapons cancels a reload.
           timeout 60 "$HOME/godot" --headless --path . -- --swaptest 2>&1 | grep swaptest | tee swap.log
           grep -q "\[swaptest\] OK" swap.log

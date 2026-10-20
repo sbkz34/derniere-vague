@@ -24,9 +24,12 @@ func build(pos: Vector3, inward: Vector3, p_weapon: String, chalk: Material, boa
 	bm.size = Vector3(1.5, 0.75, 0.02)
 	bd.mesh = bm
 	bd.material_override = board
+	bd.set_meta("merge", true)
 	holder.add_child(bd)
 	var drawing := GunShapes.build_drawing(weapon_id, chalk, 1.15 if GunShapes.shape(weapon_id).muzzle.x > 0.5 else 2.2)
 	holder.add_child(drawing)
+	for part in drawing.get_children():
+		part.set_meta("merge", true)
 	drawing.position = Vector3(0, 0.02, 0.02)
 	var name_label := Label3D.new()
 	name_label.text = G.WEAPONS[weapon_id].name

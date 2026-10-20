@@ -10,6 +10,7 @@ signal restart_pressed
 signal continue_pressed
 signal save_quit_pressed
 signal abandon_pressed
+signal map_selected(id: String)
 
 var _root: Control
 var _title: Control
@@ -375,6 +376,7 @@ func show_lobby() -> void:
 	_lobby_xp_text.text = "%d / %d XP" % [G.xp, hi]
 	_map_plan.level = level
 	_map_plan.queue_redraw()
+	_map_preview.spots = level.preview_spots
 	_map_name.text = G.MAPS[G.map_id].name
 	_map_desc.text = G.MAPS[G.map_id].desc
 	for c in _lobby_maps.get_children():
@@ -384,14 +386,13 @@ func show_lobby() -> void:
 	var map_group := ButtonGroup.new()
 	for id in G.MAPS:
 		var b := _small_button(_lobby_maps, G.MAPS[id].name, func():
-			G.map_id = id
-			_map_name.text = G.MAPS[id].name
-			_map_desc.text = G.MAPS[id].desc)
+			if id != G.map_id:
+				_map_name.text = "Chargement…"
+				_map_desc.text = G.MAPS[id].name
+				map_selected.emit(id))
 		b.toggle_mode = true
 		b.button_group = map_group
 		b.button_pressed = id == G.map_id
-	var soon := _small_button(_lobby_maps, "Nouvelle carte — bientôt", func(): pass)
-	soon.disabled = true
 	var weapon_group := ButtonGroup.new()
 	for pair in G.START_WEAPONS:
 		var id: String = pair[0]
@@ -544,7 +545,8 @@ func show_title() -> void:
 	_continue.visible = G.has_save()
 	if _continue.visible:
 		var d := G.read_save()
-		_continue.text = "Continuer — manche %d" % int(d.get("round", 1))
+		var map_name: String = G.MAPS.get(str(d.get("map", "bunker")), G.MAPS.bunker).name
+		_continue.text = "Continuer — %s, manche %d" % [map_name, int(d.get("round", 1))]
 	_title.visible = true
 	_focus(_continue if _continue.visible else _title.find_child("Play", true, false))
 
@@ -555,8 +557,20 @@ func show_pause() -> void:
 	_focus(_pause.find_child("Resume", true, false))
 
 
+## The Village's happy ending.
+func show_extraction(rounds: int, bonus: int) -> void:
+	show_game_over(rounds, false)
+	_over_title.text = "EXTRACTION RÉUSSIE"
+	_over_title.label_settings.font_color = Color(0.7, 0.9, 1.0)
+	var lines := _over_stats.text
+	lines = lines.replace("\n\n+%d XP" % G.last_xp_gain, "\n\nManche %d — vous êtes sorti du Village !\n+%d XP (dont %d pour l'extraction)" % [rounds, G.last_xp_gain + bonus, bonus])
+	lines += "\n\nArme secrète débloquée : ???  (elle arrive bientôt)"
+	_over_stats.text = lines
+
+
 func show_game_over(rounds: int, best: bool) -> void:
 	hide_all()
+	_over_title.label_settings.font_color = Color(0.85, 0.08, 0.05)
 	_over_title.text = "VOUS AVEZ SURVÉCU %d MANCHE%s" % [rounds, "S" if rounds > 1 else ""]
 	var lines := "Zombies éliminés : %d\nTirs à la tête : %d\nPoints gagnés : %d" % [G.kills, G.headshots, G.total_points]
 	lines += "\n\n+%d XP" % G.last_xp_gain
@@ -825,13 +839,37 @@ func show_armory() -> void:
 		b.pressed.connect(func(): _show_armory_weapon(id))
 		b.focus_entered.connect(func(): _show_armory_weapon(id))
 		_armory_grid.add_child(b)
+	# The Village's secret weapon: a mystery until someone gets out.
+	var secret := Button.new()
+	secret.custom_minimum_size = Vector2(128, 70)
+	secret.add_theme_font_size_override("font_size", 22)
+	secret.text = "???"
+	secret.toggle_mode = true
+	secret.button_group = group
+	secret.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
+	secret.pressed.connect(_show_secret)
+	secret.focus_entered.connect(_show_secret)
+	_armory_grid.add_child(secret)
 	_show_armory_weapon(_armory_weapon)
 	_armory.visible = true
 	_focus(_armory.find_child("Back", true, false))
 
 
+func _show_secret() -> void:
+	_armory_preview.show_weapon("desint", "")
+	_armory_preview.modulate = Color(0, 0, 0)
+	_armory_name.text = "???"
+	if G.pstat("extractions") > 0:
+		_armory_kills.text = "Débloquée ! Elle arrive dans une prochaine mise à jour."
+	else:
+		_armory_kills.text = "Réussissez une extraction au Village pour la débloquer."
+	for c in _armory_camos.get_children():
+		c.queue_free()
+
+
 func _show_armory_weapon(id: String, preview_camo := "*") -> void:
 	_armory_weapon = id
+	_armory_preview.modulate = Color(1, 1, 1)
 	_armory_preview.show_weapon(id, preview_camo)
 	_armory_name.text = G.WEAPONS[id].name
 	var kills := int(G.weapon_kills.get(id, 0))

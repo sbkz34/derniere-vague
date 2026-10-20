@@ -72,9 +72,9 @@ func build(panel_pos: Vector3, inward: Vector3, a: Vector3, b: Vector3, p_door: 
 	coil.metallic = 0.8
 	coil.roughness = 0.35
 	for p in [a, b]:
-		_box(self, p + Vector3(0, 1.0, 0) - global_position, Vector3(0.1, 2.0, 0.1), post_mat)
+		_box(self, p + Vector3(0, 1.0, 0) - global_position, Vector3(0.1, 2.0, 0.1), post_mat).set_meta("merge", true)
 		for h in [0.35, 0.95, 1.55]:
-			_box(self, p + Vector3(0, h, 0) - global_position, Vector3(0.16, 0.12, 0.16), coil)
+			_box(self, p + Vector3(0, h, 0) - global_position, Vector3(0.16, 0.12, 0.16), coil).set_meta("merge", true)
 	for h in [0.35, 0.95, 1.55]:
 		_ends.append(a + Vector3(0, h, 0))
 		_ends.append(b + Vector3(0, h, 0))

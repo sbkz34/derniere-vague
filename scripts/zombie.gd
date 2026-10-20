@@ -3,7 +3,7 @@ extends CharacterBody3D
 ## A zombie: walks up to a window from outside, tears the planks off, climbs in, then chases the
 ## player through the navigation mesh and attacks at close range.
 
-enum State { APPROACH, TEAR, VAULT, CHASE, ATTACK, DEAD }
+enum State { APPROACH, TEAR, VAULT, CHASE, ATTACK, DEAD, RISE }
 
 const HEAD_Y := 1.56
 var attack_range := 1.35
@@ -20,6 +20,11 @@ var speed := 1.3
 var kind := "walk"   # walk, jog, run, crawl
 ## Legs blown off by an explosion: drags itself along the floor.
 var crawler := false
+## Outdoors: climbs out of the ground at `rise_from` instead of coming through a window.
+var rise := false
+var rise_from := Vector3.ZERO
+var _rise_t := 0.0
+const RISE_TIME := 1.6
 var window: Barricade
 var slot := 0
 var director: Node
@@ -145,8 +150,25 @@ func _make_body() -> void:
 	add_child(cs)
 
 
+## Outdoor spawn: no window, the zombie digs itself out of the ground.
+func setup_rise(p_director: Node, p_player: Player, pos: Vector3, p_hp: float, p_kind: String) -> void:
+	setup(p_director, p_player, null, 0, p_hp, p_kind)
+	rise = true
+	rise_from = pos
+
+
 ## Start further out in the fog and walk up to the window.
 func _place() -> void:
+	if rise:
+		outside = false
+		state = State.RISE
+		global_position = rise_from + Vector3(0, -1.9, 0)
+		if player:
+			_face(player.global_position)
+			rotation.y = atan2(-(player.global_position.x - rise_from.x), -(player.global_position.z - rise_from.z))
+		Fx.dirt(get_parent(), rise_from + Vector3(0, 0.1, 0))
+		G.play_at("plank_break", rise_from, get_parent(), -8.0, 0.6)
+		return
 	var lateral := window.along * randf_range(-3.0, 3.0)
 	_approach_from = window.outside_point(slot) - window.inward * randf_range(7.0, 10.0) + lateral
 	_approach_from.y = -0.02
@@ -315,6 +337,18 @@ func _physics_process(delta: float) -> void:
 	if not alive:
 		return
 	match state:
+		State.RISE:
+			_rise_t += delta
+			var rp := clampf(_rise_t / RISE_TIME, 0.0, 1.0)
+			global_position = rise_from + Vector3(0, -1.9 * (1.0 - rp) * (1.0 - rp), 0)
+			if randf() < delta * 6.0:
+				Fx.dirt(get_parent(), rise_from + Vector3(randf_range(-0.3, 0.3), 0.05, randf_range(-0.3, 0.3)), true)
+			if rp >= 1.0:
+				global_position = rise_from + Vector3(0, 0.02, 0)
+				state = State.CHASE
+				agent.avoidance_enabled = true
+				_stuck_pos = global_position
+				_repath = 0.0
 		State.APPROACH:
 			_approach_t += delta
 			var target := window.outside_point(slot)
@@ -491,7 +525,7 @@ func _process(delta: float) -> void:
 	_leg_r.rotation.x = -swing * leg_amp
 	model.position.y = abs(cos(_phase)) * (0.04 if kind == "walk" else 0.08) if moving else 0.0
 	match state:
-		State.TEAR:
+		State.TEAR, State.RISE:
 			var claw := sin(_phase * 2.5)
 			_arm_l.rotation = Vector3(1.6 + claw * 0.5, 0, 0.1)
 			_arm_r.rotation = Vector3(1.6 - claw * 0.5, 0, -0.1)

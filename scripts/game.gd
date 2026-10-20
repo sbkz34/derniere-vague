@@ -141,6 +141,7 @@ var gadget_test := false
 var special_test := false
 var progress_test := false
 var weapon_test := false
+var village_test := false
 var save_stage := 0
 var autostart := false
 var start_points := 500
@@ -170,6 +171,7 @@ var best_round := 0
 # ------------------------------------------------------------------------------------------------
 const MAPS := {
 	"bunker": {"name": "Le Bunker", "desc": "Quatre salles, huit fenêtres, une forge."},
+	"village": {"name": "Le Village", "desc": "Rallumez les quatre lanternes des morts… et partez."},
 }
 ## Starting weapons and the level that unlocks each.
 const START_WEAPONS := [["p9", 1], ["k14", 3], ["vipere", 5], ["uzi", 7], ["grele", 8],
@@ -183,6 +185,8 @@ var session_challenge_xp := 0
 var last_level_before := 1
 ## Set by "Continuer": the saved game to restore when the level is ready.
 var pending_load: Dictionary = {}
+## Set when the lobby switches map: the rebuilt scene opens the lobby again.
+var reopen_lobby := false
 
 const SETTINGS_PATH := "user://settings.cfg"
 
@@ -219,7 +223,16 @@ func _ready() -> void:
 	special_test = args.has("--specialtest")
 	progress_test = args.has("--progresstest")
 	weapon_test = args.has("--weapontest")
+	village_test = args.has("--villagetest")
+	# Tests run on the Bunker unless told otherwise (--map=village).
+	if bot_mode or tour_mode or ui_test or view_test or window_test or dog_test or save_test \
+			or swap_test or gadget_test or special_test or progress_test or weapon_test:
+		map_id = "bunker"
+	if village_test:
+		map_id = "village"
 	for a in args:
+		if a.begins_with("--map="):
+			map_id = a.substr(6)
 		if a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
 		elif a.begins_with("--rounds="):
@@ -557,6 +570,7 @@ const CHALLENGES := [
 	{"name": "Boucher", "stat": "knife_kills", "desc": "%d éliminations au corps à corps", "goals": [25, 100, 400], "xp": [300, 1000, 2500]},
 	{"name": "Forgeron", "stat": "upgrades", "desc": "Améliorer %d fois une arme à la Forge", "goals": [3, 15, 50], "xp": [300, 1000, 2500]},
 	{"name": "Arme ultime", "stat": "ultimes", "desc": "Porter %d armes au niveau Ultime", "goals": [1, 5, 20], "xp": [500, 1500, 4000]},
+	{"name": "Évadé", "stat": "extractions", "desc": "Réussir %d extraction(s) au Village", "goals": [1, 3, 10], "xp": [3000, 6000, 15000]},
 	{"name": "Sans jambes", "stat": "crawler_kills", "desc": "Achever %d rampants", "goals": [10, 50, 200], "xp": [200, 700, 2000]},
 ]
 const TIER_ROMAN := ["I", "II", "III"]

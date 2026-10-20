@@ -13,6 +13,7 @@ var _weapon: Label
 var _ammo: Label
 var _equip: Label
 var _toast: Label
+var _objective: Label
 var _toast_t := 0.0
 var _toast_queue: Array[String] = []
 var _hint: Label
@@ -195,6 +196,16 @@ func build(p_player: Player, p_director: Director) -> void:
 	_msg.offset_right = 0
 	_msg.offset_top = 90
 	_msg.offset_bottom = 150
+	# Map objective (Village: lanterns, defences, extraction), along the top.
+	_objective = _label(_frame, 22, Color(0.7, 0.88, 1.0), 6)
+	_objective.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_objective.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_objective.anchor_left = 0.15
+	_objective.anchor_right = 0.85
+	_objective.offset_left = 0
+	_objective.offset_right = 0
+	_objective.offset_top = 22
+	_objective.offset_bottom = 56
 	# Challenge / camouflage toasts, just under the messages.
 	_toast = _label(_frame, 26, Color(0.55, 1.0, 0.6), 7)
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -302,6 +313,11 @@ func _refresh_perks() -> void:
 		_perks.add_child(p)
 
 
+## A white flash fading out (the extraction).
+func flash_white() -> void:
+	_flash.color = Color(0.85, 0.95, 1.0, 1.0)
+
+
 func _queue_toast(text: String) -> void:
 	_toast_queue.append(text)
 
@@ -316,7 +332,7 @@ func _on_message(text: String, color: Color) -> void:
 func _on_hurt(dir: Vector3, _amount: float) -> void:
 	_dmg.add_hit(dir)
 	_hurt_t = 0.35
-	_flash.color.a = 0.25
+	_flash.color = Color(0.7, 0, 0, 0.25)
 
 
 func _on_round_started(n: int) -> void:
@@ -382,6 +398,8 @@ func _process(delta: float) -> void:
 	if _hurt_t > 0.0:
 		_hurt_t -= delta
 	_flash.color.a = maxf(0.0, _flash.color.a - delta * 0.8)
+	if player.level:
+		_objective.text = player.level.objective_text()
 	# Toasts, one after the other.
 	if _toast_t > 0.0:
 		_toast_t -= delta

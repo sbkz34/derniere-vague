@@ -568,3 +568,63 @@ write("blade_hit.wav", place(0.35, [(0.0, _thud(0.25, 500, 0.05), 1.6), (0.0, lo
 d = 1.2
 hiss = highpass(white(d), 1500) * np.clip(t(d) / 0.05, 0, 1) * np.exp(-t(d) * 2.2) * 0.6
 write("rocket_fire.wav", place(d, [(0.0, _thud(0.3, 200, 0.08), 2.2), (0.02, hiss, 1.0), (0.0, lowpass(white(0.2), 800) * env(0.2, 0.001, 0.06), 1.2)]))
+
+
+# ----------------------------------------------------------------------------------------------
+# Village textures: stone walls, plaster, cobbles, roof tiles, grass.
+# ----------------------------------------------------------------------------------------------
+from scipy.spatial import cKDTree
+
+
+def voronoi_cells(points_n, size=N, jitter_seed=None):
+    """Tileable Voronoi: distance to nearest and second-nearest point, and the cell id."""
+    pts = rng.uniform(0, size, (points_n, 2))
+    tiled = np.concatenate([pts + np.array([dx, dy]) * size for dx in (-1, 0, 1) for dy in (-1, 0, 1)])
+    ids = np.tile(np.arange(points_n), 9)
+    tree = cKDTree(tiled)
+    yy, xx = np.mgrid[0:size, 0:size]
+    d, i = tree.query(np.stack([xx.ravel(), yy.ravel()], axis=1), k=2)
+    d1 = d[:, 0].reshape(size, size)
+    d2 = d[:, 1].reshape(size, size)
+    cell = ids[i[:, 0]].reshape(size, size)
+    return d1, d2, cell
+
+
+# Rough stone wall: irregular stones in mortar.
+d1, d2, cell = voronoi_cells(70)
+edge = np.clip((d2 - d1) / 3.5, 0, 1)
+tone = rng.uniform(-0.12, 0.12, 70)[cell]
+v = np.clip(0.45 + 0.3 * fbm((1, 2, 4)) + tone, 0, 1) * edge + 0.12 * (1 - edge)
+save("pierre.png", colorize(v, (0.12, 0.11, 0.1), (0.62, 0.58, 0.52)))
+# Cobblestones: rounder, darker, smaller.
+d1, d2, cell = voronoi_cells(110)
+edge = np.clip((d2 - d1) / 4.0, 0, 1) ** 0.7
+tone = rng.uniform(-0.1, 0.1, 110)[cell]
+v = np.clip(0.4 + 0.25 * fbm((1, 3)) + tone + 0.2 * (1 - d1 / d1.max()), 0, 1) * edge + 0.05 * (1 - edge)
+save("paves.png", colorize(v, (0.06, 0.06, 0.07), (0.48, 0.47, 0.46)))
+# Plaster: pale, stained, a few cracks.
+v = fbm((2, 4, 8, 16))
+stains = gaussian_filter(rng.standard_normal((N, N)), (22, 4), mode="wrap")
+stains = (stains - stains.min()) / (stains.max() - stains.min())
+v = np.clip(0.7 * v + 0.3 * (1 - stains ** 2), 0, 1)
+save("enduit.png", colorize(v, (0.36, 0.33, 0.28), (0.72, 0.67, 0.58)))
+# Roof tiles: rows of curved terracotta tiles.
+yy, xx = np.mgrid[0:N, 0:N]
+row_h = N // 8
+col_w = N // 8
+off = ((yy // row_h) % 2) * (col_w // 2)
+u = ((xx + off) % col_w) / col_w
+vrow = (yy % row_h) / row_h
+curve = np.sin(np.pi * u) ** 0.6
+shadow = np.clip(1.0 - vrow ** 4 * 1.2, 0, 1)
+tint = rng.uniform(-0.1, 0.1, (8, 9))[(yy // row_h) % 8, ((xx + off) // col_w) % 9]
+v = np.clip(0.35 + 0.45 * curve * shadow + tint + 0.15 * fbm((2, 6)), 0, 1)
+save("tuiles.png", colorize(v, (0.18, 0.06, 0.03), (0.62, 0.3, 0.18)))
+# Grass: dark, patchy, with bits of earth.
+v = fbm((1, 2, 4, 8, 16))
+blades = gaussian_filter(rng.standard_normal((N, N)), (2.5, 0.6), mode="wrap")
+blades = (blades - blades.min()) / (blades.max() - blades.min())
+earth = np.clip(noise(10) * 1.8 - 1.0, 0, 1)
+g = colorize(np.clip(0.5 * v + 0.5 * blades, 0, 1), (0.04, 0.07, 0.03), (0.2, 0.3, 0.12))
+e = colorize(v, (0.08, 0.06, 0.04), (0.28, 0.22, 0.15))
+save("herbe.png", g * (1 - earth[..., None]) + e * earth[..., None])

@@ -141,12 +141,8 @@ class WeaponPreview:
 class MapPreview:
 	extends SubViewportContainer
 
-	const SPOTS := [
-		[Vector3(1.5, 1.8, 4.5), Vector3(-2.5, 1.3, -7.0)],
-		[Vector3(10.5, 1.9, 4.0), Vector3(16.5, 0.9, -5.5)],
-		[Vector3(11.0, 1.9, 15.5), Vector3(18.2, 1.3, 10.0)],
-		[Vector3(1.0, 1.9, 9.5), Vector3(4.6, 1.3, 20.4)],
-	]
+	## [camera position, look at] pairs, from the level.
+	var spots: Array = [[Vector3(1.5, 1.8, 4.5), Vector3(-2.5, 1.3, -7.0)]]
 	var _sv: SubViewport
 	var _cam: Camera3D
 	var _t := 0.0
@@ -174,9 +170,9 @@ class MapPreview:
 			return
 		_t += delta
 		var seg := 5.0
-		var i := int(_t / seg) % SPOTS.size()
+		var i := int(_t / seg) % spots.size()
 		var p := fmod(_t, seg) / seg
-		var spot: Array = SPOTS[i]
+		var spot: Array = spots[i]
 		var from: Vector3 = spot[0]
 		var look: Vector3 = spot[1]
 		var side := (look - from).cross(Vector3.UP).normalized()
@@ -201,23 +197,33 @@ class MapPlan:
 			return
 		var lo := Vector2(INF, INF)
 		var hi := Vector2(-INF, -INF)
-		for id in Level.ROOMS:
-			lo = lo.min(Level.ROOMS[id].min)
-			hi = hi.max(Level.ROOMS[id].max)
+		var rooms: Dictionary = level.rooms
+		for id in rooms:
+			lo = lo.min(rooms[id].min)
+			hi = hi.max(rooms[id].max)
 		var pad := 18.0
 		var k := minf((size.x - pad * 2) / (hi.x - lo.x), (size.y - pad * 2) / (hi.y - lo.y))
 		var origin := (size - (hi - lo) * k) / 2.0
 		var to_px := func(p: Vector2) -> Vector2: return origin + (p - lo) * k
 		var font := ThemeDB.fallback_font
 		var line := Color(0.55, 0.75, 0.95, 0.9)
-		for id in Level.ROOMS:
-			var r: Dictionary = Level.ROOMS[id]
+		# Outdoor areas first (darker), buildings on top.
+		var order: Array = []
+		for id in rooms:
+			if not rooms[id].get("indoor", false):
+				order.append(id)
+		for id in rooms:
+			if rooms[id].get("indoor", false) and not order.has(id):
+				order.append(id)
+		var fs := 13 if rooms.size() <= 5 else 10
+		for id in order:
+			var r: Dictionary = rooms[id]
+			var outdoor: bool = level is VillageLevel and not r.get("indoor", false)
 			var a: Vector2 = to_px.call(r.min)
 			var b: Vector2 = to_px.call(r.max)
-			draw_rect(Rect2(a, b - a), Color(0.12, 0.18, 0.24, 0.9))
+			draw_rect(Rect2(a, b - a), Color(0.08, 0.14, 0.1, 0.9) if outdoor else Color(0.12, 0.18, 0.24, 0.95))
 			draw_rect(Rect2(a, b - a), line, false, 2.0)
 			var name: String = r.name
-			var fs := 13
 			var w := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			draw_string(font, Vector2((a.x + b.x) / 2 - w / 2, (a.y + b.y) / 2 - 8), name, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.85, 0.92, 1.0))
 		for win in level.windows:
@@ -254,6 +260,14 @@ class MapPlan:
 				draw_circle(c3, 7.0, col)
 			if label != "":
 				draw_string(font, c3 + Vector2(-4, 5), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0, 0, 0))
+		# Lanterns and the way out.
+		if level is VillageLevel:
+			var v := level as VillageLevel
+			for l in v.lanterns:
+				var lp: Vector2 = to_px.call(Vector2(l.center.x, l.center.z))
+				draw_colored_polygon(PackedVector2Array([lp + Vector2(0, -7), lp + Vector2(6, 0), lp + Vector2(0, 7), lp + Vector2(-6, 0)]), Color(0.6, 0.85, 1.0))
+			var pp: Vector2 = to_px.call(Vector2(v.portal.focus_point.x, v.portal.focus_point.z))
+			draw_rect(Rect2(pp - Vector2(5, 8), Vector2(10, 16)), Color(0.75, 0.92, 1.0))
 		# Start position.
 		var sp: Vector2 = to_px.call(Vector2(level.player_start.x, level.player_start.z))
 		draw_colored_polygon(PackedVector2Array([sp + Vector2(0, -8), sp + Vector2(6, 6), sp + Vector2(-6, 6)]), Color(0.3, 1.0, 0.4))

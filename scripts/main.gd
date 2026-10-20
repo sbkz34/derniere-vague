@@ -26,7 +26,7 @@ func _ready() -> void:
 	G.playing = false
 	G.apply_settings()
 
-	level = Level.new()
+	level = VillageLevel.new() if G.map_id == "village" else Level.new()
 	level.name = "Level"
 	level.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(level)
@@ -51,6 +51,9 @@ func _ready() -> void:
 	director.zombie_parent = zombies
 	add_child(director)
 	player.director = director
+	level.attach(player, director)
+	if level is VillageLevel:
+		(level as VillageLevel).objective.extracted.connect(_on_extracted)
 
 	var touch_layer := CanvasLayer.new()
 	touch_layer.layer = 10
@@ -78,6 +81,7 @@ func _ready() -> void:
 	menu.continue_pressed.connect(_continue_game)
 	menu.save_quit_pressed.connect(_save_and_quit)
 	menu.abandon_pressed.connect(_abandon)
+	menu.map_selected.connect(switch_map)
 
 	menu_cam = Camera3D.new()
 	menu_cam.fov = 70
@@ -100,9 +104,12 @@ func _ready() -> void:
 	level.bake()
 	await level.nav_ready
 
-	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test or G.weapon_test:
+	if G.autostart or G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test or G.weapon_test or G.village_test:
 		G.autostart = false
 		_start_game()
+	elif G.reopen_lobby:
+		G.reopen_lobby = false
+		menu.show_lobby()
 	else:
 		menu.show_title()
 	if G.ui_test:
@@ -125,6 +132,8 @@ func _ready() -> void:
 		_run_progress_test()
 	if G.weapon_test:
 		_run_weapon_test()
+	if G.village_test:
+		_run_village_test()
 
 
 func _start_game() -> void:
@@ -149,7 +158,7 @@ func _start_game() -> void:
 
 
 func _testing() -> bool:
-	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test or G.weapon_test
+	return G.bot_mode or G.tour_mode or G.view_test or G.window_test or G.dog_test or G.ui_test or G.save_test or G.swap_test or G.gadget_test or G.special_test or G.progress_test or G.weapon_test or G.village_test
 
 
 # ------------------------------------------------------------------------------------------------
@@ -171,7 +180,7 @@ func _collect_save(resume_round: int) -> Dictionary:
 		"second_souffle_bought": player.second_souffle_bought,
 		"next_dog_round": director.next_dog_round, "dog_rounds_done": director._dog_rounds_done,
 		"grenades": player.grenades, "decoys": player.decoys, "has_decoy": player.has_decoy,
-		"power": G.power_on,
+		"power": G.power_on, "level_state": level.save_state(),
 	}
 
 
@@ -212,6 +221,7 @@ func _apply_save(d: Dictionary) -> void:
 	player.equipment_changed.emit()
 	if bool(d.get("power", false)):
 		level.restore_power()
+	level.load_state(d.get("level_state", {}))
 	director.start_at(int(d.get("round", 1)), int(d.get("next_dog_round", 6)), int(d.get("dog_rounds_done", 0)))
 	G.say("Partie reprise — manche %d" % int(d.get("round", 1)), Color(1, 0.85, 0.4))
 
@@ -221,6 +231,10 @@ func _continue_game() -> void:
 	if G.pending_load.is_empty():
 		menu.show_title()
 		return
+	# The save may be on the other map: rebuild that one.
+	var m: String = G.pending_load.get("map", "bunker")
+	if G.MAPS.has(m):
+		G.map_id = m
 	G.autostart = true
 	_reload()
 
@@ -249,6 +263,43 @@ func _restart() -> void:
 
 func _to_title() -> void:
 	G.autostart = false
+	_reload()
+
+
+## The way out of the Village: stop the game and show the extraction screen.
+func _on_extracted() -> void:
+	if _game_over_pending:
+		return
+	_game_over_pending = true
+	player.targetable = false
+	G.play("power_on", 0.0, 0.6)
+	G.say("EXTRACTION RÉUSSIE", Color(0.75, 0.92, 1.0))
+	hud.flash_white()
+	await get_tree().create_timer(2.0, true, false, true).timeout
+	G.playing = false
+	var bonus := 5000
+	if not _testing():
+		G.delete_save()
+		G.stat_add("extractions")
+		G.xp += bonus
+		G.award_game_xp()
+	var best := G.round_num > G.best_round
+	if best and not _testing():
+		G.best_round = G.round_num
+		G.save_settings()
+	hud.visible = false
+	touch.visible = false
+	_capture_mouse(false)
+	menu.show_extraction(G.round_num, bonus)
+
+
+## Lobby: picking another map rebuilds the scene with it and comes back to the lobby.
+func switch_map(id: String) -> void:
+	if id == G.map_id or not G.MAPS.has(id):
+		return
+	G.map_id = id
+	G.save_settings()
+	G.reopen_lobby = true
 	_reload()
 
 
@@ -342,8 +393,10 @@ func _process(delta: float) -> void:
 		# Slow drift around the hall for the title screen.
 		_menu_t += delta
 		var a := _menu_t * 0.08
-		menu_cam.global_position = Vector3(1.5 + sin(a) * 2.0, 1.9, 3.5 + cos(a) * 1.0)
-		menu_cam.look_at(Vector3(-2.5 + sin(a * 0.7) * 2.0, 1.5, -7.0))
+		var orbit_c: Vector3 = level.menu_orbit[0]
+		var orbit_look: Vector3 = level.menu_orbit[1]
+		menu_cam.global_position = orbit_c + Vector3(sin(a) * 2.0, 0, cos(a) * 1.0)
+		menu_cam.look_at(orbit_look + Vector3(sin(a * 0.7) * 2.0, 0, 0))
 	if not G.playing:
 		return
 	_elapsed += delta
@@ -1129,4 +1182,127 @@ func _run_weapon_test() -> void:
 	await _wait(0.3)
 	await _screenshot("wall_hache")
 	print("[weapontest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
+	get_tree().quit()
+
+
+## The Village: map built and walkable, zombies rising from the ground, the four lanterns
+## (round gate, price, defence), the chapel door and a successful extraction.
+func _run_village_test() -> void:
+	director.set_process(false)
+	player.targetable = false
+	await _wait(0.5)
+	var problems: Array[String] = []
+	var v := level as VillageLevel
+	if v == null:
+		print("[villagetest] FAILED not the village")
+		get_tree().quit()
+		return
+	# Views of the map (only saved with --shots).
+	var tour := [
+		["place", Vector3(0, 0, 8), Vector3(0, 1.6, -9)],
+		["place_cafe", Vector3(4, 0, 2), Vector3(-12, 2.0, -2.5)],
+		["cafe", Vector3(-13.5, 0, -2.5), Vector3(-23, 1.2, -4)],
+		["mairie", Vector3(0, 0, -11.5), Vector3(0, 1.3, -21)],
+		["rue", Vector3(13.5, 0, 0.5), Vector3(36, 2.5, -2)],
+		["eglise_facade", Vector3(30, 0, 3.5), Vector3(30, 4.5, -5)],
+		["eglise", Vector3(30, 0, -6.5), Vector3(32, 1.2, -20)],
+		["grange", Vector3(26, 0, 6.5), Vector3(26, 1.2, 18)],
+		["lavoir", Vector3(0, 0, 11.5), Vector3(-4, 1.0, 18)],
+		["cimetiere", Vector3(41.5, 0, 0), Vector3(55, 1.6, 0)],
+		["chapelle", Vector3(53.5, 0, 0), Vector3(58, 1.4, 0)],
+	]
+	for d in level.doors:
+		d.open_free()
+	await level.nav_ready
+	for t in tour:
+		_pose(t[1], t[2])
+		await _wait(0.35)
+		await _screenshot("village_" + t[0])
+	# Everything that matters is on the navigation mesh and reachable from the square.
+	var map := level.nav.get_navigation_map()
+	var start := NavigationServer3D.map_get_closest_point(map, Vector3(0, 0, 5))
+	for target in [Vector3(-18, 0, -2), Vector3(0, 0, -16), Vector3(30, 0, -12), Vector3(26, 0, 12),
+			Vector3(0, 0, 14), Vector3(46, 0, 0), Vector3(55, 0, 0)]:
+		var path := NavigationServer3D.map_get_path(map, start, target, true)
+		if path.is_empty() or path[path.size() - 1].distance_to(target) > 1.5:
+			problems.append("no path to %s" % str(target))
+	# A zombie climbing out of the ground ends up standing and chasing.
+	var riser := director.spawn_rise_near(Vector3(5, 0, -5), 3.0, 500.0, "walk")
+	await _wait(0.5)
+	await _screenshot("village_rise")
+	if riser.state != Zombie.State.RISE: problems.append("not rising")
+	await _wait(1.8)
+	if riser.state != Zombie.State.CHASE or absf(riser.global_position.y) > 0.3: problems.append("rise did not finish (%s, y %.2f)" % [Zombie.State.keys()[riser.state], riser.global_position.y])
+	riser.queue_free()
+	director.alive = 0
+	# Lanterns.
+	var obj := v.objective
+	var l0: Lantern = v.lanterns[0]
+	G.round_num = 4
+	G.points = 200000
+	obj.try_light(l0)
+	if obj.active or G.points != 200000: problems.append("lantern before round 5")
+	if l0.get_hint(player).find("manche 5") < 0: problems.append("hint '%s'" % l0.get_hint(player))
+	G.round_num = 5
+	_pose(l0.center + Vector3(2.5, 0, 0), l0.center + Vector3(0, 3.0, 0))
+	await _wait(0.2)
+	obj.try_light(l0)
+	if obj.active != l0 or G.points != 190000: problems.append("lantern 1 not bought (%d)" % G.points)
+	await _wait(3.5)
+	if obj._alive_extra() == 0: problems.append("no defence horde")
+	if obj.defense_t <= 0.0: problems.append("defence clock not running")
+	await _screenshot("village_defense")
+	obj.defense_t = obj.DEFENSE_TIME - 0.2
+	await _wait(0.5)
+	if not l0.lit or obj.lit_count != 1: problems.append("lantern 1 not lit")
+	await _screenshot("village_lantern_lit")
+	# The next one waits for round 10 and costs more.
+	var l1: Lantern = v.lanterns[1]
+	obj.try_light(l1)
+	if obj.active: problems.append("lantern 2 before round 10")
+	var saved := obj.save_state()
+	if saved.lit != ["place"]: problems.append("save %s" % str(saved))
+	var full := _collect_save(G.round_num + 1)
+	if full.map != "village" or full.level_state.lit != ["place"]: problems.append("game save %s" % str(full.level_state))
+	var meshes := level.find_children("*", "MeshInstance3D", true, false).size()
+	var lamps := level.find_children("*", "OmniLight3D", true, false).size()
+	print("[villagetest] %d meshes, %d lights" % [meshes, lamps])
+	var by := {}
+	for m in level.find_children("*", "MeshInstance3D", true, false):
+		var p: Node = m.get_parent()
+		while p and p != level and not (p is Interactable):
+			p = p.get_parent()
+		var k: String = p.get_class() + ":" + str(p.get_script().get_global_name() if p and p.get_script() else "")
+		by[k] = by.get(k, 0) + 1
+	print("[villagetest] ", by)
+	for i in [1, 2, 3]:
+		var l: Lantern = v.lanterns[i]
+		G.round_num = obj.ROUNDS[i]
+		var before := G.points
+		_pose(l.center + Vector3(2.5, 0, 0), l.center + Vector3(0, 3.0, 0))
+		await _wait(0.2)
+		obj.try_light(l)
+		if before - G.points != obj.PRICES[i]: problems.append("lantern %d price %d" % [i + 1, before - G.points])
+		await _wait(0.4)
+		obj.defense_t = obj.DEFENSE_TIME - 0.1
+		await _wait(0.4)
+	if obj.lit_count != 4 or not v.portal.open: problems.append("portal not open (%d lit)" % obj.lit_count)
+	for z in zombies.get_children():
+		if z is Zombie:
+			z.queue_free()
+	director.alive = 0
+	_pose(v.portal.front + Vector3(-1, 0, 0), v.portal.focus_point)
+	await _wait(0.4)
+	await _screenshot("village_portal_open")
+	var got_out := [false]
+	obj.extracted.connect(func(): got_out[0] = true)
+	obj.start_final()
+	if not obj.final_running: problems.append("final stand did not start")
+	await _wait(2.0)
+	obj.final_t = obj.FINAL_TIME - 0.2
+	await _wait(0.5)
+	if not got_out[0]: problems.append("no extraction")
+	await _wait(2.5)
+	await _screenshot("village_extracted")
+	print("[villagetest] %s %s" % ["OK" if problems.is_empty() else "FAILED", ", ".join(problems)])
 	get_tree().quit()

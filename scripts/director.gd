@@ -182,16 +182,6 @@ func _kind_for_round(r: int) -> String:
 	return "jog" if x < run_share + 0.6 * (1.0 - run_share) else "walk"
 
 
-func _pick_window() -> Barricade:
-	var wins := level.active_windows()
-	if wins.is_empty():
-		return null
-	# Prefer windows near the player (the three closest), with a little randomness.
-	wins.sort_custom(func(a, b): return a.center.distance_to(player.global_position) < b.center.distance_to(player.global_position))
-	var n := mini(3, wins.size())
-	return wins[randi() % n]
-
-
 func _waiting_at(w: Barricade) -> int:
 	var n := 0
 	for z in get_tree().get_nodes_in_group("zombies"):
@@ -202,13 +192,65 @@ func _waiting_at(w: Barricade) -> int:
 
 
 func _spawn_one() -> void:
-	var w := _pick_window()
-	if w == null:
-		return
+	if _new_zombie(G.zombie_health(G.round_num), _kind_for_round(G.round_num)):
+		to_spawn -= 1
+		alive += 1
+
+
+## Places a new zombie at a window or, outdoors, at a patch of earth: among the spots nearest
+## the player (but not right next to them), with a little randomness. Returns false if none.
+func _new_zombie(hp: float, kind: String) -> bool:
+	var spots: Array = []
+	for w in level.active_windows():
+		spots.append([w.center.distance_to(player.global_position), w])
+	for g in level.active_ground_spawns():
+		var d := g.global_position.distance_to(player.global_position)
+		if d >= 5.0:
+			spots.append([d, g])
+	if spots.is_empty():
+		return false
+	spots.sort_custom(func(a, b): return a[0] < b[0])
+	var pick: Node = spots[randi() % mini(3, spots.size())][1]
 	var z := Zombie.new()
-	z.setup(self, player, w, _waiting_at(w), G.zombie_health(G.round_num), _kind_for_round(G.round_num))
+	if pick is Barricade:
+		var w := pick as Barricade
+		z.setup(self, player, w, _waiting_at(w), hp, kind)
+	else:
+		var off := Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6))
+		z.setup_rise(self, player, pick.global_position + off, hp, kind)
 	zombie_parent.add_child(z)
-	to_spawn -= 1
+	return true
+
+
+## Extra zombie climbing out of the ground near `pos` (lantern defences, the final stand).
+## It counts as alive for the round but not in the round's total.
+func spawn_rise_near(pos: Vector3, radius: float, hp: float, kind: String) -> Zombie:
+	var map := level.nav.get_navigation_map()
+	var p := pos
+	for i in 8:
+		var ang := randf() * TAU
+		var r := randf_range(radius * 0.5, radius)
+		var want := pos + Vector3(cos(ang) * r, 0, sin(ang) * r)
+		var got := NavigationServer3D.map_get_closest_point(map, want)
+		if got.distance_to(want) < 1.5 and got.distance_to(player.global_position) > 3.5:
+			p = got
+			break
+	var z := Zombie.new()
+	z.setup_rise(self, player, Vector3(p.x, 0.0, p.z), hp, kind)
+	zombie_parent.add_child(z)
+	alive += 1
+	return z
+
+
+## A Colosse appearing near `pos` (later lantern defences).
+func spawn_brute_near(pos: Vector3) -> void:
+	var map := level.nav.get_navigation_map()
+	var p := NavigationServer3D.map_get_closest_point(map, pos + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)))
+	var b := Brute.new()
+	b.setup_brute(self, player, p, brute_health(maxi(G.round_num, 10)))
+	zombie_parent.add_child(b)
+	Fx.blast(zombie_parent, p + Vector3(0, 1.4, 0), 2.4, Color(1.0, 0.55, 0.2))
+	G.play_at("brute_roar", p + Vector3(0, 2, 0), zombie_parent, 2.0)
 	alive += 1
 
 
@@ -259,13 +301,8 @@ func respawn(z: Zombie) -> void:
 		nd.setup_dog(self, player, _dog_spot(), hp)
 		zombie_parent.add_child(nd)
 		return
-	var w := _pick_window()
-	if w == null:
+	if not _new_zombie(hp, "walk" if kind == "crawl" else kind):
 		alive -= 1
-		return
-	var nz := Zombie.new()
-	nz.setup(self, player, w, _waiting_at(w), hp, "walk" if kind == "crawl" else kind)
-	zombie_parent.add_child(nz)
 
 
 func on_zombie_killed(z: Zombie) -> void:

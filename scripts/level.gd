@@ -17,6 +17,19 @@ const ROOMS := {
 	"labo": {"name": "Laboratoire", "min": Vector2(7, 7), "max": Vector2(19, 21)},
 }
 
+## The rooms of this map (the Bunker's by default; other maps set their own).
+var rooms: Dictionary = ROOMS
+## Outdoor spots where zombies climb out of the ground (none in the Bunker).
+var ground_spawns: Array[GroundSpawn] = []
+## Camera spots for the lobby's live view: [position, look at].
+var preview_spots: Array = [
+	[Vector3(1.5, 1.8, 4.5), Vector3(-2.5, 1.3, -7.0)],
+	[Vector3(10.5, 1.9, 4.0), Vector3(16.5, 0.9, -5.5)],
+	[Vector3(11.0, 1.9, 15.5), Vector3(18.2, 1.3, 10.0)],
+	[Vector3(1.0, 1.9, 9.5), Vector3(4.6, 1.3, 20.4)],
+]
+## Title screen camera: drifts around `menu_orbit[0]` looking towards `menu_orbit[1]`.
+var menu_orbit: Array = [Vector3(1.5, 1.9, 3.5), Vector3(-2.5, 1.5, -7.0)]
 var nav: NavigationRegion3D
 var windows: Array[Barricade] = []
 var doors: Array[BuyDoor] = []
@@ -90,6 +103,24 @@ func _make_materials() -> void:
 func build() -> void:
 	_make_materials()
 	_environment()
+	_make_nav()
+	_floors_and_ceilings()
+	_walls()
+	_outside()
+	_props()
+	_lights()
+	_windows()
+	_doors()
+	_buyables()
+	merge_static()
+
+
+## Called once the player and the director exist (maps with an objective need them).
+func attach(_player: Node, _director: Node) -> void:
+	pass
+
+
+func _make_nav() -> void:
 	nav = NavigationRegion3D.new()
 	nav.name = "Nav"
 	var nm := NavigationMesh.new()
@@ -106,15 +137,6 @@ func build() -> void:
 	add_child(nav)
 	nav.bake_finished.connect(_on_bake_finished)
 
-	_floors_and_ceilings()
-	_walls()
-	_outside()
-	_props()
-	_lights()
-	_windows()
-	_doors()
-	_buyables()
-
 
 # ------------------------------------------------------------------------------------------------
 # Geometry helpers
@@ -125,6 +147,7 @@ func box(parent: Node3D, center: Vector3, size: Vector3, mat: Material, collide 
 	bm.size = size
 	mi.mesh = bm
 	mi.material_override = mat
+	mi.set_meta("merge", true)
 	if not collide:
 		parent.add_child(mi)
 		mi.position = center
@@ -152,6 +175,7 @@ func cylinder(parent: Node3D, center: Vector3, radius: float, height: float, mat
 	cm.radial_segments = 12
 	mi.mesh = cm
 	mi.material_override = mat
+	mi.set_meta("merge", true)
 	if not collide:
 		parent.add_child(mi)
 		mi.position = center
@@ -236,8 +260,8 @@ func _environment() -> void:
 
 func _floors_and_ceilings() -> void:
 	var floor_mats := {"hall": m_tiles, "atelier": m_floor_concrete, "reserve": m_wood_floor, "labo": m_tiles}
-	for id in ROOMS:
-		var r: Dictionary = ROOMS[id]
+	for id in rooms:
+		var r: Dictionary = rooms[id]
 		var mn: Vector2 = r.min
 		var mx: Vector2 = r.max
 		var c := (mn + mx) / 2
@@ -478,11 +502,69 @@ func set_storm(on: bool) -> void:
 
 
 func room_at(p: Vector3) -> String:
-	for id in ROOMS:
-		var r: Dictionary = ROOMS[id]
+	for id in rooms:
+		var r: Dictionary = rooms[id]
 		if p.x >= r.min.x and p.x <= r.max.x and p.z >= r.min.y and p.z <= r.max.y:
 			return id
 	return ""
+
+
+## Fewer draw calls for phones: the static pieces of scenery (walls, floors, props, facade
+## details) are merged into one mesh per material and per 12 m cell. Cells stay small so each
+## merged piece is still lit only by the lamps near it.
+func merge_static(cell := 12.0) -> void:
+	var groups := {}
+	var inv := global_transform.affine_inverse()
+	for n in find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if not mi.has_meta("merge") or mi.mesh == null or mi.material_override == null or not mi.visible:
+			continue
+		var xf := inv * mi.global_transform
+		var c := xf.origin
+		var key := [mi.material_override, int(floor(c.x / cell)), int(floor(c.z / cell))]
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append([mi, xf])
+	for key in groups:
+		var items: Array = groups[key]
+		if items.size() < 2:
+			continue
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for it in items:
+			var mi: MeshInstance3D = it[0]
+			st.append_from(mi.mesh, 0, it[1])
+		var merged := MeshInstance3D.new()
+		merged.mesh = st.commit()
+		merged.material_override = key[0]
+		merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(merged)
+		for it in items:
+			var mi: MeshInstance3D = it[0]
+			mi.get_parent().remove_child(mi)
+			mi.free()
+
+
+## Line shown on the HUD for the map's objective ("" when there is none).
+func objective_text() -> String:
+	return ""
+
+
+## Map-specific state for the saved game.
+func save_state() -> Dictionary:
+	return {}
+
+
+func load_state(_d: Dictionary) -> void:
+	pass
+
+
+func active_ground_spawns() -> Array[GroundSpawn]:
+	var out: Array[GroundSpawn] = []
+	for g in ground_spawns:
+		if unlocked.get(g.room, false):
+			out.append(g)
+	return out
 
 
 func active_windows() -> Array[Barricade]:
@@ -494,11 +576,14 @@ func active_windows() -> Array[Barricade]:
 
 
 func _on_door_opened(door: BuyDoor) -> void:
+	var said := false
 	for r in door.rooms:
 		if not unlocked[r]:
 			unlocked[r] = true
 			room_unlocked.emit(r)
-			G.say("%s ouvert" % ROOMS[r].name, Color(1, 0.85, 0.4))
+			if not said and not rooms[r].get("silent", false):
+				said = true
+				G.say(rooms[r].get("msg", "%s ouvert" % rooms[r].name), Color(1, 0.85, 0.4))
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	bake()

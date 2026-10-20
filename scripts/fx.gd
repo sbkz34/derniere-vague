@@ -56,6 +56,18 @@ static func blood(parent: Node, pos: Vector3, dir: Vector3, big := false) -> voi
 	_burst(parent, pos, dir, _blood_mat, 22 if big else 9, 4.5 if big else 2.5, 0.6, 1.6 if big else 1.0)
 
 
+static var _dirt_mat: StandardMaterial3D
+
+
+## Clods of earth thrown up by a zombie digging itself out.
+static func dirt(parent: Node, pos: Vector3, small := false) -> void:
+	if _dirt_mat == null:
+		_dirt_mat = StandardMaterial3D.new()
+		_dirt_mat.albedo_color = Color(0.16, 0.12, 0.08)
+		_dirt_mat.roughness = 1.0
+	_burst(parent, pos, Vector3.UP, _dirt_mat, 4 if small else 18, 2.5 if small else 4.5, 0.6, 1.2 if small else 2.0)
+
+
 static func impact(parent: Node, pos: Vector3, normal: Vector3) -> void:
 	_mats()
 	_burst(parent, pos + normal * 0.02, normal, _dust_mat, 6, 2.0, 0.35, 0.6, 4.0)
